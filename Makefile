@@ -5,9 +5,9 @@ DEST = /lib/modules/$(CURRENT)/misc
 
 #EXTRA_CFLAGS += -E
 
-TARGET = rs485_bus
-
-obj-m	:= $(TARGET).o
+TARGET1 = rs485_bus
+TARGET2 = test
+obj-m	:= $(TARGET1).o $(TARGET2).o
 
 default:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
