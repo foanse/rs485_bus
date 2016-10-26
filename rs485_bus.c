@@ -63,25 +63,29 @@ struct bus_type rs485_bus_type = {
 };
 
 
-/*
+
 ////////////////////////////////////////////////////////////// device
 static void rs485_dev_release(struct device *dev){ 
 
 }
 
-int register_rs485_device(struct rs485_device *rs485_dev)
-{
+int register_rs485_device(struct rs485_device *rs485_dev){
     rs485_dev->dev.bus = &rs485_bus_type;
     rs485_dev->dev.parent = &rs485_bus;
     rs485_dev->dev.release = rs485_dev_release;
-    strncpy(rs485_dev->dev.bus_id, rs485_dev->name, BUS_ID_SIZE);
+//    strcpy(rs485_dev->dev.init_name, rs485_dev->name);
+    rs485_dev->dev.init_name=rs485_dev->name;
+    printk("rs485_bus: device registered!\n");
     return device_register(&rs485_dev->dev);
 }
+
 EXPORT_SYMBOL(register_rs485_device);
 
 void unregister_rs485_device(struct rs485_device *rs485_dev)
 {
     device_unregister(&rs485_dev->dev);
+    printk("rs485_bus: device unregistered!\n");
+
 }
 EXPORT_SYMBOL(unregister_rs485_device);
 

@@ -1,3 +1,5 @@
+#include <linux/device.h>
+
 //extern struct device rs485_bus;
 extern struct bus_type rs485_bus_type;
 
@@ -14,21 +16,20 @@ extern struct bus_type rs485_bus_type;
 };
 
 #define to_rs485_driver(drv) container_of(drv, struct rs485_driver, driver);
-
+*/
 /*
  * A device type for things "plugged" into the LDD bus.
  */
 
-/*struct rs485_device {
+struct rs485_device {
     char *name;
     struct rs485_driver *driver;
     struct device dev;
 };
-
 #define to_rs485_device(dev) container_of(dev, struct rs485_device, dev);
-*/
-//extern int register_rs485_device(struct rs485_device *);
-//extern void unregister_rs485_device(struct rs485_device *);
+
+extern int register_rs485_device(struct rs485_device *);
+extern void unregister_rs485_device(struct rs485_device *);
 //extern int register_rs485_driver(struct rs485_driver *);
 //extern void unregister_rs485_driver(struct rs485_driver *);
 
