@@ -23,26 +23,31 @@ struct tiny1{
     struct device dev;
 };
 #define to_tiny(_dev) container_of(_dev, struct tiny1, dev);
+static int tiny2313a_probe(struct device *dev);
+
 struct device_driver tiny2313a={
     .name="tiny2313a",
-    
+    .probe=tiny2313a_probe,
 };
 
-static int add_device(unsigned char *number, unsigned char *ID){
+static int tiny2313a_probe(struct device *dev){
+    unsigned char buf[4];
     struct tiny1 *item;
-    item=kmalloc(sizeof(struct tiny1),GFP_KERNEL);
-    if(item){
-	memset(item, 0, sizeof(struct tiny1));
-	item->number=number;
-	item->dev.driver=&tiny2313a;
-	item->dev.init_name="tiny1";
-	list_add( &(item->list),&list );
-	register_rs485_device(&(item->dev));
+    memcpy(&buf,&(dev->dma_mask),4);
+    printk("0x%x\t0x%x\t0x%x\t0x%x\n",buf[0],buf[1],buf[2],buf[3]);
+    if((buf[0]==0x01)&&(buf[1]==0x01)){
+	item=kmalloc(sizeof(struct tiny1),GFP_KERNEL);
+	if(item){
+	    memset(item, 0, sizeof(struct tiny1));
+	    item->number=dev->id;
+	    item->dev.driver=&tiny2313a;
+	    item->dev.init_name="tiny1";
+	    list_add( &(item->list),&list );
+	    register_rs485_device(&(item->dev));
+	}
     }
+    return 0;
 }
-
-
-
 
 static void __exit dev_exit( void )
 {
@@ -61,10 +66,10 @@ static void __exit dev_exit( void )
 static int __init dev_init( void )
 {
     register_rs485_driver(&tiny2313a);
-    int i;
-    unsigned char *buf;
-    for (i=0;i<8;i++)
-	add_device(&i,buf);
+//OD    int i;
+//    unsigned char *buf;
+//    for (i=0;i<8;i++)
+//	add_device(&i,buf);
     printk( KERN_ALERT "rs485_dev: loaded!\n" );
     return 0;
 

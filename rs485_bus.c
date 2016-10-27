@@ -70,11 +70,11 @@ static void rs485_dev_release(struct device *dev){
 }
 
 int register_rs485_device(struct device *dev){
+    unsigned char B=0;
+    char buf[20];
     dev->bus = &rs485_bus_type;
     dev->parent = &rs485_bus;
     dev->release = rs485_dev_release;
-    char buf[20];
-    unsigned char B=0;
     sprintf(buf, "%d:%d:%s",B,I,dev->init_name);
     dev->init_name=buf;
     printk("rs485_bus: device registered!\n");
@@ -101,8 +101,21 @@ EXPORT_SYMBOL(unregister_rs485_device);
 int register_rs485_driver(struct device_driver *driver)
 {
     int ret;
+    struct device *dev;
+    unsigned char buf[4];
     driver->bus = &rs485_bus_type;
     ret = driver_register(driver);
+
+    dev=kmalloc(sizeof(struct device),GFP_KERNEL);
+    if(dev){
+        memset(dev, 0, sizeof(struct device));
+	buf[0]=0x01;
+	buf[1]=0x01;
+	buf[2]=0xAA;
+	buf[3]=0xB0;
+	memcpy(&(dev->dma_mask),&buf,4);
+        driver->probe(dev);
+    }
     return ret;
 /*    driver->version_attr.attr.name = "version";
     driver->version_attr.attr.owner = driver->module;
