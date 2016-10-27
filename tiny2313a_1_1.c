@@ -24,12 +24,10 @@ struct tiny1{
 };
 #define to_tiny(_dev) container_of(_dev, struct tiny1, dev);
 static int tiny2313a_probe(struct device *dev);
-
 struct device_driver tiny2313a={
     .name="tiny2313a",
     .probe=tiny2313a_probe,
 };
-
 static int tiny2313a_probe(struct device *dev){
     unsigned char buf[4];
     struct tiny1 *item;
@@ -48,7 +46,6 @@ static int tiny2313a_probe(struct device *dev){
     }
     return 0;
 }
-
 static void __exit dev_exit( void )
 {
     struct tiny1 *item;
@@ -62,14 +59,9 @@ static void __exit dev_exit( void )
     unregister_rs485_driver(&tiny2313a);
     printk( KERN_ALERT "rs485_dev: is unloaded!\n" );
 }
-
 static int __init dev_init( void )
 {
     register_rs485_driver(&tiny2313a);
-//OD    int i;
-//    unsigned char *buf;
-//    for (i=0;i<8;i++)
-//	add_device(&i,buf);
     printk( KERN_ALERT "rs485_dev: loaded!\n" );
     return 0;
 

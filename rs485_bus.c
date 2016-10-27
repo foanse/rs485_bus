@@ -81,9 +81,7 @@ int register_rs485_device(struct device *dev){
     I++;
     return device_register(dev);
 }
-
 EXPORT_SYMBOL(register_rs485_device);
-
 void unregister_rs485_device(struct device *dev)
 {
     device_unregister(dev);
