@@ -31,7 +31,7 @@ return 0;
 }
 EXPORT_SYMBOL( fas_rs485_bus );
 */
-
+static int I=0;
 
 static ssize_t show_bus_version(struct bus_type *bus, char *buf)
 {
@@ -69,21 +69,25 @@ static void rs485_dev_release(struct device *dev){
 
 }
 
-int register_rs485_device(struct rs485_device *rs485_dev){
-    rs485_dev->dev.bus = &rs485_bus_type;
-    rs485_dev->dev.parent = &rs485_bus;
-    rs485_dev->dev.release = rs485_dev_release;
-//    strcpy(rs485_dev->dev.init_name, rs485_dev->name);
-    rs485_dev->dev.init_name=rs485_dev->name;
+int register_rs485_device(struct device *dev){
+    dev->bus = &rs485_bus_type;
+    dev->parent = &rs485_bus;
+    dev->release = rs485_dev_release;
+    char buf[20];
+    unsigned char B=0;
+    sprintf(buf, "%d:%d:%s",B,I,dev->init_name);
+    dev->init_name=buf;
     printk("rs485_bus: device registered!\n");
-    return device_register(&rs485_dev->dev);
+    I++;
+    return device_register(dev);
 }
 
 EXPORT_SYMBOL(register_rs485_device);
 
-void unregister_rs485_device(struct rs485_device *rs485_dev)
+void unregister_rs485_device(struct device *dev)
 {
-    device_unregister(&rs485_dev->dev);
+    device_unregister(dev);
+    dev=NULL;
     printk("rs485_bus: device unregistered!\n");
 
 }
@@ -93,38 +97,28 @@ EXPORT_SYMBOL(unregister_rs485_device);
  * Crude driver interface.
  */
 
-/*
-static ssize_t show_version(struct device_driver *driver, char *buf)
-{
-//    struct rs485_driver *ldriver = to_rs485_driver(driver);
-//    sprintf(buf, "%s\n", ldriver->version);
-//    return strlen(buf);
-    return "123";
-}
 
-int register_rs485_driver(struct rs485_driver *driver)
+int register_rs485_driver(struct device_driver *driver)
 {
     int ret;
-    driver->driver.bus = &rs485_bus_type;
-    ret = driver_register(&driver->driver);
-    if (ret)
-	return ret;
-    driver->version_attr.attr.name = "version";
+    driver->bus = &rs485_bus_type;
+    ret = driver_register(driver);
+    return ret;
+/*    driver->version_attr.attr.name = "version";
     driver->version_attr.attr.owner = driver->module;
     driver->version_attr.attr.mode = S_IRUGO;
     driver->version_attr.show = show_version;
     driver->version_attr.store = NULL;
     return driver_create_file(&driver->driver, &driver->version_attr);
-}
+*/}
 
-void unregister_rs485_driver(struct rs485_driver *driver)
+void unregister_rs485_driver(struct device_driver *driver)
 {
-    driver_unregister(&driver->driver);
+    driver_unregister(driver);
 }
 EXPORT_SYMBOL(register_rs485_driver);
 EXPORT_SYMBOL(unregister_rs485_driver);
 
-*/
 
 static void __exit bus_exit( void )
 {

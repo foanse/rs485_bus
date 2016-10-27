@@ -11,68 +11,60 @@
 #include <linux/fcntl.h>	/* O_ACCMODE */
 #include <linux/aio.h>
 #include <asm/uaccess.h>
-
+#include <linux/list.h>
 #include "api.h"
 MODULE_LICENSE( "GPL" );
 MODULE_AUTHOR( "Andrey Fokin <foanse@gmail.com>" );
-/*
-static int __init test(void){
- printk("rs485 test start\n");
- char* B=0;
- char* R;
- B=0;
- R=to_bus(B,B,B,B,B);
- printk("result '%d'\n",R);
- return -1;
-}
+LIST_HEAD( list );
 
-module_init(test);
-*/
-
-struct rs485_device tiny2313={
-    .name="tiny2313",
-//    .dev.init_name =,
-//    dev->dev.driver = NULL;
-//    dev->dev.dev.driver_data = dev;
+struct tiny1{
+    unsigned char number;
+    struct list_head list;
+    struct device dev;
+};
+#define to_tiny(_dev) container_of(_dev, struct tiny1, dev);
+struct device_driver tiny2313a={
+    .name="tiny2313a",
+    
 };
 
-
-/*static void register_dev(struct rs485_device *dev, int index)
-{
-    sprintf(dev->name, "tyni2313_%d", index);
-    dev->dev.init_name = dev->name;
-//    dev->dev.driver = NULL;
-//    dev->dev.dev.driver_data = dev;
-    register_rs485_device(&dev);
-//    device_create_file(&dev->ldev.dev, &dev_attr_dev);
+static int add_device(unsigned char *number, unsigned char *ID){
+    struct tiny1 *item;
+    item=kmalloc(sizeof(struct tiny1),GFP_KERNEL);
+    if(item){
+	memset(item, 0, sizeof(struct tiny1));
+	item->number=number;
+	item->dev.driver=&tiny2313a;
+	item->dev.init_name="tiny1";
+	list_add( &(item->list),&list );
+	register_rs485_device(&(item->dev));
+    }
 }
-*/
+
+
+
+
 static void __exit dev_exit( void )
 {
-//    device_unregister(&rs485_bus);
-//    bus_unregister(&rs485_bus_type);
-    unregister_rs485_device(&tiny2313);
+    struct tiny1 *item;
+    struct list_head *iter,*iter_safe;
+    list_for_each_safe(iter,iter_safe,&list){
+	item=list_entry( iter, struct tiny1, list);
+	unregister_rs485_device(&(item->dev));
+	list_del(iter);
+	kfree(item);
+    }
+    unregister_rs485_driver(&tiny2313a);
     printk( KERN_ALERT "rs485_dev: is unloaded!\n" );
 }
 
 static int __init dev_init( void )
 {
-/*    int ret;
-    ret = bus_register(&rs485_bus_type);
-    if (ret)
-        return ret;
-    if (bus_create_file(&rs485_bus_type, &bus_attr_version))
-        printk(KERN_NOTICE "rs485_bus: unable to create version attribute\n");
-    ret = device_register(&rs485_bus);
-    if (ret)
-        printk(KERN_NOTICE "rs485_bus: unable to register fas_rs485_0\n");
-*/
-//    strncpy(tiny2313.name, "tiny2313", 9);
-//    tiny2313.dev.init_name = tiny2313.name;
-//    dev->dev.driver = NULL;
-//    dev->dev.dev.driver_data = dev;
-    register_rs485_device(&tiny2313);
-
+    register_rs485_driver(&tiny2313a);
+    int i;
+    unsigned char *buf;
+    for (i=0;i<8;i++)
+	add_device(&i,buf);
     printk( KERN_ALERT "rs485_dev: loaded!\n" );
     return 0;
 
