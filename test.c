@@ -2,7 +2,7 @@
 #include <asm/io.h>
 #include <linux/ioport.h>
 #include <linux/types.h>
-
+#include <linux/delay.h>
 
 #define PORT 0x3F8  /* Port Address Goes Here */
 
@@ -21,6 +21,7 @@
 
 int __init init_module(void)
 {
+    printk("init\n");
     outb(0,		PORT + UART_IER);        /* Turn off interrupts - Port1 */
     outb(UART_LCR_DLAB,	PORT + UART_LCR);  /* SET DLAB ON */
 
@@ -32,11 +33,12 @@ int __init init_module(void)
     /* FIFO Control Register */
 //    outb(UART_MCR_OUT2|UART_MCR_RTS|UART_MCR_DTR,
 //			PORT + UART_MCR);
+    outb(UART_MCR_OUT2,	PORT + UART_MCR);
     /* Turn on DTR, RTS, and OUT2 */
     outb( inb(PORT + UART_LCR)&(~UART_LCR_DLAB),
 			PORT + UART_LCR);
     /* SET DLAB OFF */
-    outb(UART_IER_RDI,	PORT + UART_IER);
+//    outb(UART_IER_RDI,	PORT + UART_IER);
 
 
 
@@ -47,17 +49,38 @@ int __init init_module(void)
 //        outb(0x00, PORT + 1);    //                  (hi byte)
 //        outb(0x03, PORT + 3);    // 8 bits, no parity, one stop bit
 //        outb(0x00, PORT + 2);    // Disable fifo
-        outb(0x01, PORT);
-        outb(0x02, PORT);
-        outb(0x03, PORT);
-        outb(0x04, PORT);
-        outb(0x05, PORT);
-        outb(0x06, PORT);
-        outb(0x07, PORT);
-        outb(0x08, PORT);
-        outb('\n', PORT);
-        printk("<1> Sent a\n");
-//    }
+    printk("write\n");
+    outb(0x01, PORT);
+msleep(500);
+    outb(0x02, PORT);
+msleep(500);
+    outb(0x03, PORT);
+msleep(500);
+    outb(0x04, PORT);
+msleep(500);
+    outb(0x05, PORT);
+msleep(500);
+    printk("read\n");
+unsigned char T;
+int c=0,count=30;
+    do {
+	printk("%d\n",count);
+	c = inb(PORT + UART_LSR);
+	if (c & 1) {
+	    T = inb(PORT);
+	    printk("%c(%02x)\n",T,T);
+	}
+msleep(500);
+    count--;
+    }while (count > 0);
+    outb(0x06, PORT);
+msleep(500);
+    outb(0x07, PORT);
+msleep(500);
+    outb(0x08, PORT);
+msleep(500);
+    outb('\n', PORT);
+    printk("exit\n");
     return -1;
 }
 

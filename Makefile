@@ -7,7 +7,8 @@ DEST = /lib/modules/$(CURRENT)/misc
 
 TARGET1 = rs485_bus
 TARGET2 = test
-obj-m	:= $(TARGET1).o $(TARGET2).o
+TARGET3 = tiny2313a_1_1
+obj-m	:= $(TARGET1).o $(TARGET2).o $(TARGET3).o
 
 default:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules

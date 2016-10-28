@@ -1,5 +1,10 @@
 #include <linux/device.h>
 #include <linux/kernel.h>
+#include <linux/serial_reg.h>
+#include <asm/io.h>
+#include <linux/ioport.h>
+#include <linux/types.h>
+#include <linux/delay.h>
 
 
 #include <linux/kobject.h>
@@ -13,24 +18,29 @@
 #include <asm/uaccess.h>
 #include <linux/pci.h>
 #include <linux/version.h>
-#include <linux/delay.h>
 #include <linux/time.h>
 #include <linux/semaphore.h>
-#include <asm/io.h>
+
 #include "api.h"
 
 
 MODULE_LICENSE( "GPL" );
 MODULE_AUTHOR( "Andrey Fokin <foanse@gmail.com>" );
 MODULE_DESCRIPTION( "rs485_bus" );
+#define PORT 0x3F8
+#define outb_s(port,command) outb(command,port)
+#define inb_s(port) inb(port)
 
-/*
-extern char* fas_rs485_bus(char* bus, char* address, char* comand, char* data, char* count){
-printk("rs485_bus to_bus\n");
-return 0;
+
+extern void fas_rs485_bus(struct device *dev){
+unsigned char *buf,*BUF,i;
+buf=(unsigned char)(dev->platform_data);
+BUF=buf++;
+printk("rs485_bus talk:%d\t%d\n",buf[0],BUF[0]);
+return;
 }
 EXPORT_SYMBOL( fas_rs485_bus );
-*/
+
 static int I=0;
 
 static ssize_t show_bus_version(struct bus_type *bus, char *buf)
@@ -138,8 +148,22 @@ static void __exit bus_exit( void )
     printk( KERN_ALERT "rs485_bus: is unloaded!\n" );
 }
 
+static void __init serialport_init(void){
+    outb_s(PORT + UART_IER,0);/* Turn off interrupts - Port1 */
+    outb_s(PORT + UART_LCR,UART_LCR_DLAB);/* SET DLAB ON */
+    outb_s(PORT + UART_DLL,0x0C);
+    outb_s(PORT + UART_DLM,0x00);/* Set Baud rate - Divisor Latch High Byte */
+    outb_s(PORT + UART_LCR,UART_LCR_WLEN8);/* 8 Bits, No Parity, 1 Stop Bit */
+    outb_s(PORT + UART_FCR,UART_FCR_TRIGGER_14|UART_FCR_ENABLE_FIFO|UART_FCR_CLEAR_RCVR|UART_FCR_CLEAR_XMIT);/* FIFO Control Register */
+    outb_s(PORT + UART_MCR,UART_MCR_OUT2); /* Turn on DTR, RTS, and OUT2 */
+    outb_s(PORT + UART_LCR,inb(PORT + UART_LCR)&(~UART_LCR_DLAB));/* SET DLAB OFF */
+}
+
+
+
 static int __init bus_init( void )
 {
+    serialport_init();
     int ret;
     ret = bus_register(&rs485_bus_type);
     if (ret)
