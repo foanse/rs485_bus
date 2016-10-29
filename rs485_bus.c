@@ -52,78 +52,132 @@ static unsigned short ModRTU_CRC(unsigned char *len, unsigned char *buf)
     return crc;
 }
 extern int fas_rs485_bus(struct device *dev){
-    unsigned char *buf,i,m,c;
+    unsigned char *buf,i,m;
     unsigned short crc;
     u32 J;
 
-printk("clean:");
+//printk("clean:");
     i = inb(PORT+UART_LSR);
     while(i & 1){
 	i = inb(PORT+UART_LSR);
-	c=inb(PORT);
-	printk(" 0x%02x",c);
+	m=inb(PORT);
+//	printk(" 0x%02x",m);
     }
-printk("\n");
-
-
+//printk("\n");
     buf=(unsigned char *)(dev->platform_data);
-    c=buf[0];
-    m=buf[1]+1;
-    buf[1]=dev->id;
-    crc=ModRTU_CRC(&m,(buf+1));		//					printk("rs485_bus talk:\t%02x\t%02x\n",dev->id,m);
-    for(i=1;i<(m+1);i++){
+    m=buf[0]+1;
+    buf[0]=dev->id;
+    crc=ModRTU_CRC(&m,buf);		//					printk("rs485_bus talk:\t%02x\t%02x\n",dev->id,m);
+    for(i=0;i<m;i++){
 	outb_s(PORT,buf[i]);		//					printk(" 0x%02x",buf[i]);
     }
     outb_s(PORT,(unsigned char)(crc>>8));
     outb_s(PORT,(unsigned char)(crc));	//					printk("crc:0x%02x\t0x%02x\n",(unsigned char)(crc>>8),(unsigned char)(crc));
-    memset(buf,0,c*sizeof(unsigned char));
+    memset(buf,0,BUFSIZE*sizeof(unsigned char));
     J=jiffies+symbol*200;
     m=0;
-    printk("j+200:%d\tj:%d\n",J,jiffies);
+//    printk("j+200:%d\tj:%d\n",J,jiffies);
     while(time_before(jiffies,J)){
 	i = inb(PORT+UART_LSR);
         if (i & 1) {
 	    buf[m] = inb(PORT);
-	    printk("(0x%02x)\t%d\n",buf[m],jiffies);
-	    if(m<c) m++;
+//	    printk("(0x%02x)\t%d\n",buf[m],jiffies);
+	    if(m<BUFSIZE) m++;
 	    J=jiffies+symbol*4;
 	}
     }
-    if(m<2){
+    if(m<4){
 	printk("rs485_bus: 0x%02X device don`t responce (%d)\n",dev->id,m);
 	return -1;
     }
-    if(dev->id==buf[0]){
-	if(buf[1]&0x80){
-	    printk("rs485_bus: 0x%02X device error comand %0x%02x\n",buf[0],buf[1]);
-	    return -2;
-	}
-	m-=2;
-	crc=ModRTU_CRC(&m,buf);
-	printk("CRC:0x%04x\tj:%d\n",crc,jiffies);
-	if((((unsigned char)(crc>>8))==buf[m])&&(((unsigned char)(crc))==buf[m+1])){
-	    for(i=2;i<m;i++)
-		buf[i-2]=buf[i];
-	    for(i=m;i<c;i++)
-		buf[i]=0;
-	    return (m-2);
-	}else{
-	    printk("rs485_bus: 0x%02X device error crc %0x%04x\n",buf[0],crc);
-	    return -3;
-	}
-    }else
-	printk("rs485_bus: 0x%02X responce error number\n",buf[0]);
-return -100;
+    if(dev->id!=buf[0]){
+	printk("rs485_bus: 0x%02X responce error number 0x%02x\n",dev->id,buf[0]);
+	return -2;
+    }
+    if(buf[1]&0x80){
+	printk("rs485_bus: 0x%02X device error comand 0x%02x\n",dev->id,buf[1]);
+	return -3;
+    }
+    m-=2;
+    crc=ModRTU_CRC(&m,buf);
+//    printk("CRC:0x%04x\tj:%d\n",crc,jiffies);
+    if((((unsigned char)(crc>>8))!=buf[m])||(((unsigned char)(crc))!=buf[m+1])){
+	printk("rs485_bus: 0x%02X device error crc 0x%04x\n",dev->id,crc);
+	return -4;
+    }
+    for(i=2;i<m;i++)
+	buf[i-2]=buf[i];
+    for(i=m;i<BUFSIZE;i++)
+	buf[i]=0;
+    return (m-2);
 }
 EXPORT_SYMBOL( fas_rs485_bus );
-
-static int I=0;
 
 static ssize_t show_bus_version(struct bus_type *bus, char *buf)
 {
     return snprintf(buf, PAGE_SIZE, "123\n");
 }
-static BUS_ATTR(version, S_IRUGO, show_bus_version, NULL);
+static BUS_ATTR(version, 00444, show_bus_version, NULL);
+
+static int dr_probe(struct device_driver *dr, void *dev){
+    printk("probe...\n");
+    return dr->probe(dev);
+}
+
+static ssize_t show_count(struct bus_type *bus, char *buf)
+{
+    int i,count;
+    struct device *dev;
+    unsigned char B[BUFSIZE];
+    count=0;
+    dev=kmalloc(sizeof(struct device),GFP_KERNEL);
+    if(dev){
+	for(i=10;i<17;i++){
+	    memset(dev, 0, sizeof(struct device));
+	    memset(&B,0,sizeof(unsigned char)*BUFSIZE);
+	    dev->id=i;
+	    dev->bus=bus;
+	    dev->platform_data=&B;
+	    B[0]=1;
+	    B[1]=0x11;
+	    if(fas_rs485_bus(dev)>0){
+		memcpy(&(dev->dma_mask),&B,4);
+		printk("Rx:0x%02x%02x%02x%02x\n",B[0],B[1],B[2],B[3]);
+//		driver->probe(dev);
+		count+=bus_for_each_drv(bus,NULL,dev,dr_probe);
+	    }
+	printk("count:%03d\ti:%03d\n",count,i);
+	}
+    }
+    return snprintf(buf, PAGE_SIZE, "%03d\n",count);
+}
+static ssize_t store_count(struct bus_type *bus, const char *buf,size_t count)
+{
+    int i;
+    struct device *dev;
+    unsigned char B[BUFSIZE];
+    dev=kmalloc(sizeof(struct device),GFP_KERNEL);
+    if(dev){
+	memset(dev, 0, sizeof(struct device));
+	memset(&B,0,sizeof(unsigned char)*BUFSIZE);
+	sscanf(buf, "%du", &i);
+	dev->id=i;
+	dev->bus=bus;
+	dev->platform_data=&B;
+	B[0]=1;
+	B[1]=0x11;
+	if(fas_rs485_bus(dev)>0){
+	    memcpy(&(dev->dma_mask),&B,4);
+	    printk("Rx:0x%02x%02x%02x%02x\n",B[0],B[1],B[2],B[3]);
+	    if(bus_for_each_drv(bus,NULL,dev,dr_probe))
+		return count;
+	    }
+	}
+    return -1;
+}
+
+
+static BUS_ATTR(count, 00644, show_count, store_count);
 
 
 ///////////////////////////////////////////////////////////////////The bus device.
@@ -161,10 +215,9 @@ int register_rs485_device(struct device *dev){
     dev->bus = &rs485_bus_type;
     dev->parent = &rs485_bus;
     dev->release = rs485_dev_release;
-    sprintf(buf, "%d:%d:%s",B,I,dev->init_name);
+    sprintf(buf, "%d:%d:%s",B,dev->id,dev->init_name);
     dev->init_name=buf;
     printk("rs485_bus: device registered!\n");
-    I++;
     return device_register(dev);
 }
 EXPORT_SYMBOL(register_rs485_device);
@@ -185,12 +238,12 @@ EXPORT_SYMBOL(unregister_rs485_device);
 int register_rs485_driver(struct device_driver *driver)
 {
     int ret;
-    struct device *dev;
-    unsigned char buf[4];
+//    struct device *dev;
+//    unsigned char buf[4];
     driver->bus = &rs485_bus_type;
     ret = driver_register(driver);
 
-    dev=kmalloc(sizeof(struct device),GFP_KERNEL);
+/*    dev=kmalloc(sizeof(struct device),GFP_KERNEL);
     if(dev){
         memset(dev, 0, sizeof(struct device));
 	dev->id=255;
@@ -201,14 +254,8 @@ int register_rs485_driver(struct device_driver *driver)
 	memcpy(&(dev->dma_mask),&buf,4);
         driver->probe(dev);
     }
-    return ret;
-/*    driver->version_attr.attr.name = "version";
-    driver->version_attr.attr.owner = driver->module;
-    driver->version_attr.attr.mode = S_IRUGO;
-    driver->version_attr.show = show_version;
-    driver->version_attr.store = NULL;
-    return driver_create_file(&driver->driver, &driver->version_attr);
-*/}
+*/    return ret;
+}
 
 void unregister_rs485_driver(struct device_driver *driver)
 {
@@ -247,6 +294,8 @@ static int __init bus_init( void )
 	return ret;
     if (bus_create_file(&rs485_bus_type, &bus_attr_version))
 	printk(KERN_NOTICE "rs485_bus: unable to create version attribute\n");
+    if (bus_create_file(&rs485_bus_type, &bus_attr_count))
+	printk(KERN_NOTICE "rs485_bus: unable to create count attribute\n");
     ret = device_register(&rs485_bus);
     if (ret)
 	printk(KERN_NOTICE "rs485_bus: unable to register fas_rs485_0\n");
