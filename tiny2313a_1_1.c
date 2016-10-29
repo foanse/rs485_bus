@@ -13,26 +13,31 @@
 #include <asm/uaccess.h>
 #include <linux/list.h>
 #include <linux/jiffies.h>
+#include <linux/string.h>
 #include "api.h"
 
 MODULE_LICENSE( "GPL" );
 MODULE_AUTHOR( "Andrey Fokin <foanse@gmail.com>" );
 LIST_HEAD( list );
+static int pins=8;
+module_param(pins,int, S_IRUGO);
+
 struct tiny1{
     unsigned char number;
     unsigned int  errors;
     u32 lasttime;
     struct list_head list;
     struct device dev;
-    struct device_attribute out[256];
-    struct device_attribute block[256];
+    struct device_attribute *out;
+    struct device_attribute *block;
     struct device_attribute reley[2];
     struct device_attribute count_dev[2];
     struct device_attribute mem[2];
-    struct device_attribute version;
+    struct device_attribute version;/*********/
     struct device_attribute count;
-    struct device_attribute error;
-    struct device_attribute last;
+    struct device_attribute id;
+    struct device_attribute error;/*********/
+    struct device_attribute last;/*********/
 };
 #define to_tiny(_dev) container_of(_dev, struct tiny1, dev);
 
@@ -41,28 +46,116 @@ static ssize_t show_ver(struct device *dev, struct device_attribute *attr, char 
     struct tiny1 *T;
     T=to_tiny(dev);
     B=kmalloc(sizeof(unsigned char)*20,GFP_KERNEL);
-    dev->platform_data=B;
+    dev->platform_data=&B;
     B[0]=20;
     B[1]=1;
     B[2]=0x11;
     if(0<fas_rs485_bus(dev)){
-	return sprintf(buf,"0x%02X-0x%02X\n",B[1],B[2]);
 	T->lasttime=jiffies;
+	return sprintf(buf,"0x%02X-0x%02X\n",B[1],B[2]);
     }else{
-	return sprintf(buf,"error\n");
-	T->errors++;
+	T->errors+=1;
+	return sprintf(buf,"error (%d)\n",T->errors);
     }
-	kfree(buf);
 }
 static ssize_t show_err(struct device *dev, struct device_attribute *attr, char *buf){
     struct tiny1 *T;
     T=to_tiny(dev);
     return sprintf(buf,"%d\n",T->errors);
 }
-static ssize_t show_last(struct device *dev, struct device_attribute *attr, char *buf){
+static ssize_t show_reley(struct device *dev, struct device_attribute *attr, char *buf){
+    unsigned char *B;
+    struct tiny1 *T;
+    int c,i;
+    T=to_tiny(dev);
+    B=kmalloc(sizeof(unsigned char)*20,GFP_KERNEL);
+    dev->platform_data=B;
+    B[0]=20;
+    B[1]=5;
+    B[2]=0x03;
+    B[3]=0;
+    B[4]=192;
+    B[5]=0;
+    B[6]=1;
+    c=fas_rs485_bus(dev);
+    if(0<c){
+	T->lasttime=jiffies;
+	if(strcmp(attr->attr.name,"reley0")==0)
+	    i=(0x01&B[2]);
+	if(strcmp(attr->attr.name,"reley1")==0)
+	    i=(0x10&B[2])>>4;
+	return sprintf(buf,"%d",i);
+    }else{
+	T->errors+=1;
+	return sprintf(buf,"error (%d)\n",T->errors);
+    }
+}
+static ssize_t store_reley(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
+    unsigned char *B;
+    struct tiny1 *T;
+    int c,i;
+    T=to_tiny(dev);
+    B=kmalloc(sizeof(unsigned char)*20,GFP_KERNEL);
+    dev->platform_data=B;
+    B[0]=20;
+    B[1]=5;
+    B[2]=0x06;
+    B[3]=0;
+    B[4]=192;
+    B[5]=0;
+	if(strcmp(attr->attr.name,"reley0")==0){
+	    if(buf[0]=='0') B[6]=0x02;
+	    if(buf[0]=='1') B[6]=0x01;
+	}
+	if(strcmp(attr->attr.name,"reley1")==0){
+	    if(buf[0]=='0') B[6]=0x08;
+	    if(buf[0]=='1') B[6]=0x04;
+	}
+    c=fas_rs485_bus(dev);
+    if(0<c){
+	T->lasttime=jiffies;
+	return count;
+    }else{
+	T->errors+=1;
+	return -1;
+    }
+}
+
+
+
+
+static ssize_t show_id(struct device *dev, struct device_attribute *attr, char *buf){
+    return sprintf(buf,"%d\n",dev->id);
+}
+static ssize_t store_id(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
+/*    unsigned char *B;
     struct tiny1 *T;
     T=to_tiny(dev);
-    return sprintf(buf,"%d\n",T->lasttime);
+    B=kmalloc(sizeof(unsigned char)*20,GFP_KERNEL);
+    dev->platform_data=B;
+    B[0]=20;
+    B[1]=1;
+    B[2]=0x11;
+    if(0<fas_rs485_bus(dev)){
+	T->lasttime=jiffies;
+	return sprintf(buf,"0x%02X-0x%02X\n",B[1],B[2]);
+    }else{
+	T->errors+=1;
+	return sprintf(buf,"error (%d)\n",T->errors);
+    }
+	kfree(buf);
+*/
+return -1;
+}
+
+
+static ssize_t show_last(struct device *dev, struct device_attribute *attr, char *buf){
+    struct tiny1 *T;
+    u32 J;
+    T=to_tiny(dev);
+    J=(jiffies-T->lasttime)/HZ;
+    if(J<0) J=10000;
+    return sprintf(buf,"%d\n",J);
 }
 
 static ssize_t show_out(struct device *dev, struct device_attribute *attr, char *buf){
@@ -103,7 +196,9 @@ static int tiny2313a_probe(struct device *dev){
 	    item->dev.init_name="tiny1";
 	    list_add( &(item->list),&list );
 	    register_rs485_device(&(item->dev));
-	    for (i=0;i<256;i++){
+	    item->out=kmalloc(sizeof(struct device_attribute)*pins,GFP_KERNEL);
+	    item->block=kmalloc(sizeof(struct device_attribute)*pins,GFP_KERNEL);
+	    for (i=0;i<pins;i++){
 		item->out[i].attr.name=kmalloc(7,GFP_KERNEL);
 		snprintf((char *)item->out[i].attr.name,7,"out_%02x",i);
 		item->out[i].attr.mode=S_IRUGO | S_IWUSR;
@@ -129,9 +224,26 @@ static int tiny2313a_probe(struct device *dev){
 	    device_create_file(&(item->dev),&(item->error));
 	    item->last.attr.name="_sincetime";
 	    item->last.attr.mode=S_IRUGO;
-	    item->last.show=show_ver;
+	    item->last.show=show_last;
 	    item->last.store=NULL;
 	    device_create_file(&(item->dev),&(item->last));
+
+	    item->reley[0].attr.name="reley0";
+	    item->reley[0].attr.mode=S_IRUGO|S_IWUGO;
+	    item->reley[0].show=show_reley;
+	    item->reley[0].store=store_reley;
+	    device_create_file(&(item->dev),&(item->reley[0]));
+	    item->reley[1].attr.name="reley1";
+	    item->reley[1].attr.mode=S_IRUGO|S_IWUGO;
+	    item->reley[1].show=show_reley;
+	    item->reley[1].store=store_reley;
+	    device_create_file(&(item->dev),&(item->reley[1]));
+
+	    item->id.attr.name="_id";
+	    item->id.attr.mode=S_IRUGO|S_IWUGO;
+	    item->id.show=show_id;
+	    item->id.store=store_id;
+	    device_create_file(&(item->dev),&(item->id));
 
 
 //    struct device_attribute reley[2];
@@ -153,7 +265,7 @@ static void __exit dev_exit( void )
     struct list_head *iter,*iter_safe;
     list_for_each_safe(iter,iter_safe,&list){
 	item=list_entry( iter, struct tiny1, list);
-	for (i=0;i<256;i++){
+	for (i=0;i<pins;i++){
 	    device_remove_file(&(item->dev),&(item->out[i]));
 	    kfree(item->out[i].attr.name);
 	    device_remove_file(&(item->dev),&(item->block[i]));

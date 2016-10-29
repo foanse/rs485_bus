@@ -55,6 +55,17 @@ extern int fas_rs485_bus(struct device *dev){
     unsigned char *buf,i,m,c;
     unsigned short crc;
     u32 J;
+
+printk("clean:");
+    i = inb(PORT+UART_LSR);
+    while(i & 1){
+	i = inb(PORT+UART_LSR);
+	c=inb(PORT);
+	printk(" 0x%02x",c);
+    }
+printk("\n");
+
+
     buf=(unsigned char *)(dev->platform_data);
     c=buf[0];
     m=buf[1]+1;
@@ -66,9 +77,9 @@ extern int fas_rs485_bus(struct device *dev){
     outb_s(PORT,(unsigned char)(crc>>8));
     outb_s(PORT,(unsigned char)(crc));	//					printk("crc:0x%02x\t0x%02x\n",(unsigned char)(crc>>8),(unsigned char)(crc));
     memset(buf,0,c*sizeof(unsigned char));
-    J=jiffies+symbol*6;
+    J=jiffies+symbol*200;
     m=0;
-    printk("j+6:%d\tj:%d\n",J,jiffies);
+    printk("j+200:%d\tj:%d\n",J,jiffies);
     while(time_before(jiffies,J)){
 	i = inb(PORT+UART_LSR);
         if (i & 1) {
