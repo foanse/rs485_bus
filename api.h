@@ -3,7 +3,7 @@
 //extern struct device rs485_bus;
 //extern struct bus_type rs485_bus_type;
 
-extern void fas_rs485_bus(struct device *);
+extern int fas_rs485_bus(struct device *);
 
 
 extern int register_rs485_device(struct device *);
