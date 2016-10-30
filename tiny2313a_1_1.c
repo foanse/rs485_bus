@@ -19,27 +19,29 @@
 
 MODULE_LICENSE( "GPL" );
 MODULE_AUTHOR( "Andrey Fokin <foanse@gmail.com>" );
-LIST_HEAD( list );
-static int pins=8;
-module_param(pins,int, S_IRUGO);
 
 struct tiny1{
-    unsigned char number;
     unsigned int  errors;
+    unsigned char pins;
+    unsigned int address;
     struct timespec lasttime;
     struct list_head list;
     struct device dev;
     struct device_attribute *out;
     struct device_attribute *block;
     struct device_attribute reley[2];/*********/
-    struct device_attribute count_dev[2];
+    struct device_attribute spi[2];
     struct device_attribute mem[2];
     struct device_attribute version;/*********/
-    struct device_attribute count;
-    struct device_attribute id;
+    struct device_attribute count;/*********/
+    struct device_attribute id;/*********/
     struct device_attribute error;/*********/
     struct device_attribute last;/*********/
 };
+
+
+LIST_HEAD( list );
+
 #define to_tiny(_dev) container_of(_dev, struct tiny1, dev);
 
 static ssize_t show_ver(struct device *dev, struct device_attribute *attr, char *buf){
@@ -51,21 +53,40 @@ static ssize_t show_ver(struct device *dev, struct device_attribute *attr, char 
     B[1]=0x11;
     if(0<fas_rs485_bus(dev)){
 	T->lasttime=CURRENT_TIME_SEC;
-	return sprintf(buf,"0x%02X-0x%02X\n",B[1],B[2]);
+	return sprintf(buf,"0x%02X-0x%02X",B[1],B[2]);
     }else{
 	T->errors+=1;
-	return sprintf(buf,"error (%d)\n",T->errors);
+	return sprintf(buf,"error (%d)",T->errors);
     }
 }
 static ssize_t show_err(struct device *dev, struct device_attribute *attr, char *buf){
     struct tiny1 *T;
     T=to_tiny(dev);
-    return sprintf(buf,"%d\n",T->errors);
+    return sprintf(buf,"%d",T->errors);
 }
+static ssize_t show_count(struct device *dev, struct device_attribute *attr, char *buf){
+    unsigned char *B;
+    struct tiny1 *T;
+    int c;
+    T=to_tiny(dev);
+    B=(unsigned char *)dev->platform_data;
+    B[0]=1;
+    B[1]=0x0B;
+    if(fas_rs485_bus(dev)>0){
+	T->lasttime=CURRENT_TIME_SEC;
+	c=(B[0]<<8)|B[1];
+	return sprintf(buf,"%d",c);
+    }else{
+	T->errors+=1;
+	return sprintf(buf,"error (%d)",T->errors);
+    }
+}
+
 static ssize_t show_reley(struct device *dev, struct device_attribute *attr, char *buf){
     unsigned char *B;
     struct tiny1 *T;
     int c,i;
+    i=0;
     T=to_tiny(dev);
     B=(unsigned char *)dev->platform_data;
     B[0]=5;
@@ -84,13 +105,13 @@ static ssize_t show_reley(struct device *dev, struct device_attribute *attr, cha
 	return sprintf(buf,"%d",i);
     }else{
 	T->errors+=1;
-	return sprintf(buf,"error (%d)\n",T->errors);
+	return sprintf(buf,"error (%d)",T->errors);
     }
 }
 static ssize_t store_reley(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
     unsigned char *B;
     struct tiny1 *T;
-    int c,i;
+    int c;
     T=to_tiny(dev);
     B=(unsigned char *)dev->platform_data;
     B[0]=5;
@@ -116,9 +137,62 @@ static ssize_t store_reley(struct device *dev, struct device_attribute *attr,con
     }
 }
 
+static ssize_t show_spi(struct device *dev, struct device_attribute *attr, char *buf){
+    unsigned char *B;
+    struct tiny1 *T;
+    int c,i;
+    i=0;
+    T=to_tiny(dev);
+    B=(unsigned char *)dev->platform_data;
+    B[0]=5;
+    B[1]=0x03;
+    B[2]=0;
+    if(strcmp(attr->attr.name,"_spi0")==0)
+	B[3]=193;
+    if(strcmp(attr->attr.name,"_spi1")==0)
+	B[3]=194;
+    B[4]=0;
+    B[5]=1;
+    c=fas_rs485_bus(dev);
+    if(0<c){
+	T->lasttime=CURRENT_TIME_SEC;
+	return sprintf(buf,"%d",B[2]);
+    }else{
+	T->errors+=1;
+	return sprintf(buf,"error (%d)",T->errors);
+    }
+}
+static ssize_t store_spi(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
+    unsigned char *B;
+    struct tiny1 *T;
+    int c;
+    T=to_tiny(dev);
+    B=(unsigned char *)dev->platform_data;
+    B[0]=5;
+    B[1]=0x06;
+    B[2]=0;
+    if(strcmp(attr->attr.name,"_spi0")==0)
+	B[3]=193;
+    if(strcmp(attr->attr.name,"_spi1")==0)
+	B[3]=194;
+    B[4]=0;
+    sscanf(buf, "%du", &c);
+    if(c>18) c=18;
+    B[5]=c;
+    c=fas_rs485_bus(dev);
+    if(0<c){
+	T->lasttime=CURRENT_TIME_SEC;
+	return count;
+    }else{
+	T->errors+=1;
+	return -1;
+    }
+}
+
+
 
 static ssize_t show_id(struct device *dev, struct device_attribute *attr, char *buf){
-    return sprintf(buf,"%d\n",dev->id);
+    return sprintf(buf,"%03d",dev->id);
 }
 static ssize_t store_id(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
     unsigned char *B;
@@ -148,13 +222,11 @@ static ssize_t store_id(struct device *dev, struct device_attribute *attr,const 
 static ssize_t show_last(struct device *dev, struct device_attribute *attr, char *buf){
     struct tiny1 *T;
     struct timespec N;
-    T=to_tiny(dev);
     int J;
+    T=to_tiny(dev);
     N=CURRENT_TIME_SEC;
     J=N.tv_sec-T->lasttime.tv_sec;
-//    J=(jiffies-T->lasttime)/HZ;
-//    if(J<0) J=10000;
-    return sprintf(buf,"%d\n",J);
+    return sprintf(buf,"%d",J);
 }
 
 static ssize_t show_out(struct device *dev, struct device_attribute *attr, char *buf){
@@ -178,10 +250,58 @@ struct device_driver tiny2313a={
     .name="tiny2313a",
     .probe=tiny2313a_probe,
 };
+
+static void create_pins(struct tiny1 *item){
+    unsigned char *B;
+    int c,i;
+    i=0;
+    B=(unsigned char *)item->dev.platform_data;
+    B[0]=5;
+    B[1]=0x03;
+    B[2]=0;
+    B[3]=193;
+    B[4]=0;
+    B[5]=2;
+    c=fas_rs485_bus(&(item->dev));
+    if(4<c){
+	item->lasttime=CURRENT_TIME_SEC;
+	i=(B[2]&0x3F)+(B[4]&0x3F);
+    }else{
+	item->errors+=1;
+	i=0;
+    }
+    if(i>36) i=0;
+    item->pins=i*8;
+    item->out=kmalloc(sizeof(struct device_attribute)*(item->pins),GFP_KERNEL);
+    item->block=kmalloc(sizeof(struct device_attribute)*(item->pins),GFP_KERNEL);
+    for (i=0;i<item->pins;i++){
+	item->out[i].attr.name=kmalloc(7,GFP_KERNEL);
+	snprintf((char *)item->out[i].attr.name,7,"out_%02x",i);
+	item->out[i].attr.mode=00666;
+	item->out[i].show=show_out;
+	item->out[i].store=store_out;
+	device_create_file(&(item->dev),&(item->out[i]));
+	item->block[i].attr.name=kmalloc(9,GFP_KERNEL);
+	snprintf((char *)item->block[i].attr.name,9,"block_%02x",i);
+	item->block[i].attr.mode=00644;
+	item->block[i].show=show_block;
+	item->block[i].store=store_block;
+	device_create_file(&(item->dev),&(item->block[i]));
+	}
+}
+static void remove_pins(struct tiny1 *item){
+    int i;
+    for (i=0;i<item->pins;i++){
+	device_remove_file(&(item->dev),&(item->out[i]));
+	kfree(item->out[i].attr.name);
+	device_remove_file(&(item->dev),&(item->block[i]));
+	kfree(item->block[i].attr.name);
+    }
+}
+
 static int tiny2313a_probe(struct device *dev){
     unsigned char buf[4];
     unsigned char *B;
-    int i;
     struct tiny1 *item;
     memcpy(&buf,&(dev->dma_mask),4);
     printk("0x%x\t0x%x\t0x%x\t0x%x\n",buf[0],buf[1],buf[2],buf[3]);
@@ -192,69 +312,64 @@ static int tiny2313a_probe(struct device *dev){
 	    B=kmalloc(sizeof(unsigned char)*BUFSIZE,GFP_KERNEL);
 	    memset(B, 0, sizeof(unsigned char)*BUFSIZE);
 	    item->dev.platform_data=B;
-	    item->number=dev->id;
+	    item->pins=8;
 	    item->lasttime=CURRENT_TIME_SEC;
 	    item->errors=0;
 	    item->dev.id=dev->id;
 	    item->dev.driver=&tiny2313a;
 	    item->dev.init_name="tiny1";
 	    list_add( &(item->list),&list );
-	    register_rs485_device(&(item->dev));
-	    item->out=kmalloc(sizeof(struct device_attribute)*pins,GFP_KERNEL);
-	    item->block=kmalloc(sizeof(struct device_attribute)*pins,GFP_KERNEL);
-	    for (i=0;i<pins;i++){
-		item->out[i].attr.name=kmalloc(7,GFP_KERNEL);
-		snprintf((char *)item->out[i].attr.name,7,"out_%02x",i);
-		item->out[i].attr.mode=00666;
-		item->out[i].show=show_out;
-		item->out[i].store=store_out;
-		device_create_file(&(item->dev),&(item->out[i]));
-		item->block[i].attr.name=kmalloc(9,GFP_KERNEL);
-		snprintf((char *)item->block[i].attr.name,9,"block_%02x",i);
-		item->block[i].attr.mode=00644;
-		item->block[i].show=show_block;
-		item->block[i].store=store_block;
-		device_create_file(&(item->dev),&(item->block[i]));
-		}
+	register_rs485_device(&(item->dev));
 	    item->version.attr.name="_version";
 	    item->version.attr.mode=00444;
 	    item->version.show=show_ver;
 	    item->version.store=NULL;
-	    device_create_file(&(item->dev),&(item->version));
+	device_create_file(&(item->dev),&(item->version));
 	    item->error.attr.name="_errors";
 	    item->error.attr.mode=00444;
 	    item->error.show=show_err;
 	    item->error.store=NULL;
-	    device_create_file(&(item->dev),&(item->error));
+	device_create_file(&(item->dev),&(item->error));
 	    item->last.attr.name="_sincetime";
 	    item->last.attr.mode=00444;
 	    item->last.show=show_last;
 	    item->last.store=NULL;
-	    device_create_file(&(item->dev),&(item->last));
-
+	device_create_file(&(item->dev),&(item->last));
 	    item->reley[0].attr.name="reley0";
 	    item->reley[0].attr.mode=00666;
 	    item->reley[0].show=show_reley;
 	    item->reley[0].store=store_reley;
-	    device_create_file(&(item->dev),&(item->reley[0]));
+	device_create_file(&(item->dev),&(item->reley[0]));
 	    item->reley[1].attr.name="reley1";
 	    item->reley[1].attr.mode=00666;
 	    item->reley[1].show=show_reley;
 	    item->reley[1].store=store_reley;
-	    device_create_file(&(item->dev),&(item->reley[1]));
-
+	device_create_file(&(item->dev),&(item->reley[1]));
+	    item->spi[0].attr.name="_spi0";
+	    item->spi[0].attr.mode=00644;
+	    item->spi[0].show=show_spi;
+	    item->spi[0].store=store_spi;
+	device_create_file(&(item->dev),&(item->spi[0]));
+	    item->spi[1].attr.name="_spi1";
+	    item->spi[1].attr.mode=00644;
+	    item->spi[1].show=show_spi;
+	    item->spi[1].store=store_spi;
+	device_create_file(&(item->dev),&(item->spi[1]));
 	    item->id.attr.name="_id";
 	    item->id.attr.mode=00644;
 	    item->id.show=show_id;
 	    item->id.store=store_id;
-	    device_create_file(&(item->dev),&(item->id));
+	device_create_file(&(item->dev),&(item->id));
+	    item->count.attr.name="_count";
+	    item->count.attr.mode=00444;
+	    item->count.show=show_count;
+	    item->count.store=NULL;
+	device_create_file(&(item->dev),&(item->count));
 
+	create_pins(item);
 
-//    struct device_attribute reley[2];
 //    struct device_attribute count_dev[2];
 //    struct device_attribute mem[2];
-//    struct device_attribute version;
-//    struct device_attribute count;
 
 
 	return 1;
@@ -265,16 +380,10 @@ static int tiny2313a_probe(struct device *dev){
 static void __exit dev_exit( void )
 {
     struct tiny1 *item;
-    int i;
     struct list_head *iter,*iter_safe;
     list_for_each_safe(iter,iter_safe,&list){
 	item=list_entry( iter, struct tiny1, list);
-	for (i=0;i<pins;i++){
-	    device_remove_file(&(item->dev),&(item->out[i]));
-	    kfree(item->out[i].attr.name);
-	    device_remove_file(&(item->dev),&(item->block[i]));
-	    kfree(item->block[i].attr.name);
-	}
+	remove_pins(item);
 	kfree(item->dev.platform_data);
 	unregister_rs485_device(&(item->dev));
 	list_del(iter);
