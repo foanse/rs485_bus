@@ -14,6 +14,7 @@
 #include <linux/list.h>
 #include <linux/jiffies.h>
 #include <linux/string.h>
+#include <linux/time.h>
 #include "api.h"
 
 MODULE_LICENSE( "GPL" );
@@ -25,7 +26,7 @@ module_param(pins,int, S_IRUGO);
 struct tiny1{
     unsigned char number;
     unsigned int  errors;
-    u32 lasttime;
+    struct timespec lasttime;
     struct list_head list;
     struct device dev;
     struct device_attribute *out;
@@ -49,7 +50,7 @@ static ssize_t show_ver(struct device *dev, struct device_attribute *attr, char 
     B[0]=1;
     B[1]=0x11;
     if(0<fas_rs485_bus(dev)){
-	T->lasttime=jiffies;
+	T->lasttime=CURRENT_TIME_SEC;
 	return sprintf(buf,"0x%02X-0x%02X\n",B[1],B[2]);
     }else{
 	T->errors+=1;
@@ -75,7 +76,7 @@ static ssize_t show_reley(struct device *dev, struct device_attribute *attr, cha
     B[5]=1;
     c=fas_rs485_bus(dev);
     if(0<c){
-	T->lasttime=jiffies;
+	T->lasttime=CURRENT_TIME_SEC;
 	if(strcmp(attr->attr.name,"reley0")==0)
 	    i=(0x01&B[2]);
 	if(strcmp(attr->attr.name,"reley1")==0)
@@ -107,7 +108,7 @@ static ssize_t store_reley(struct device *dev, struct device_attribute *attr,con
 	}
     c=fas_rs485_bus(dev);
     if(0<c){
-	T->lasttime=jiffies;
+	T->lasttime=CURRENT_TIME_SEC;
 	return count;
     }else{
 	T->errors+=1;
@@ -135,7 +136,7 @@ static ssize_t store_id(struct device *dev, struct device_attribute *attr,const 
 	return -1;
     B[5]=c;
     if(fas_rs485_bus(dev)>0){
-	T->lasttime=jiffies;
+	T->lasttime=CURRENT_TIME_SEC;
 	return count;
     }else{
 	T->errors+=1;
@@ -146,10 +147,13 @@ static ssize_t store_id(struct device *dev, struct device_attribute *attr,const 
 
 static ssize_t show_last(struct device *dev, struct device_attribute *attr, char *buf){
     struct tiny1 *T;
-    u32 J;
+    struct timespec N;
     T=to_tiny(dev);
-    J=(jiffies-T->lasttime)/HZ;
-    if(J<0) J=10000;
+    int J;
+    N=CURRENT_TIME_SEC;
+    J=N.tv_sec-T->lasttime.tv_sec;
+//    J=(jiffies-T->lasttime)/HZ;
+//    if(J<0) J=10000;
     return sprintf(buf,"%d\n",J);
 }
 
@@ -189,6 +193,7 @@ static int tiny2313a_probe(struct device *dev){
 	    memset(B, 0, sizeof(unsigned char)*BUFSIZE);
 	    item->dev.platform_data=B;
 	    item->number=dev->id;
+	    item->lasttime=CURRENT_TIME_SEC;
 	    item->errors=0;
 	    item->dev.id=dev->id;
 	    item->dev.driver=&tiny2313a;

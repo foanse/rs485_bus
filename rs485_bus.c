@@ -28,6 +28,9 @@
 MODULE_LICENSE( "GPL" );
 MODULE_AUTHOR( "Andrey Fokin <foanse@gmail.com>" );
 MODULE_DESCRIPTION( "rs485_bus" );
+static int trys=4;
+module_param(trys,int, S_IRUGO);
+
 #define PORT 0x3F8
 #define symbol 1
 #define outb_s(port,command) outb(command,port)
@@ -51,37 +54,31 @@ static unsigned short ModRTU_CRC(unsigned char *len, unsigned char *buf)
     }
     return crc;
 }
-extern int fas_rs485_bus(struct device *dev){
-    unsigned char *buf,i,m;
+int rs485_talk(struct device *dev){
+    unsigned char *buf,i,m,B[BUFSIZE];
     unsigned short crc;
     u32 J;
-
-//printk("clean:");
-    i = inb(PORT+UART_LSR);
-    while(i & 1){
+    do{
 	i = inb(PORT+UART_LSR);
 	m=inb(PORT);
-//	printk(" 0x%02x",m);
-    }
-//printk("\n");
+    }while( i & 1);
     buf=(unsigned char *)(dev->platform_data);
     m=buf[0]+1;
-    buf[0]=dev->id;
-    crc=ModRTU_CRC(&m,buf);		//					printk("rs485_bus talk:\t%02x\t%02x\n",dev->id,m);
+    memcpy(&B,buf,m);
+    B[0]=dev->id;
+    crc=ModRTU_CRC(&m,&B);		//					printk("rs485_bus talk:\t%02x\t%02x\n",dev->id,m);
     for(i=0;i<m;i++){
-	outb_s(PORT,buf[i]);		//					printk(" 0x%02x",buf[i]);
+	outb_s(PORT,B[i]);		//					printk(" 0x%02x",buf[i]);
     }
     outb_s(PORT,(unsigned char)(crc>>8));
     outb_s(PORT,(unsigned char)(crc));	//					printk("crc:0x%02x\t0x%02x\n",(unsigned char)(crc>>8),(unsigned char)(crc));
-    memset(buf,0,BUFSIZE*sizeof(unsigned char));
+    memset(&B,0,BUFSIZE*sizeof(unsigned char));
     J=jiffies+symbol*200;
     m=0;
-//    printk("j+200:%d\tj:%d\n",J,jiffies);
     while(time_before(jiffies,J)){
 	i = inb(PORT+UART_LSR);
         if (i & 1) {
-	    buf[m] = inb(PORT);
-//	    printk("(0x%02x)\t%d\n",buf[m],jiffies);
+	    B[m] = inb(PORT);
 	    if(m<BUFSIZE) m++;
 	    J=jiffies+symbol*4;
 	}
@@ -90,26 +87,33 @@ extern int fas_rs485_bus(struct device *dev){
 	printk("rs485_bus: 0x%02X device don`t responce (%d)\n",dev->id,m);
 	return -1;
     }
-    if(dev->id!=buf[0]){
-	printk("rs485_bus: 0x%02X responce error number 0x%02x\n",dev->id,buf[0]);
+    if(dev->id!=B[0]){
+	printk("rs485_bus: 0x%02X responce error number 0x%02x\n",dev->id,B[0]);
 	return -2;
     }
-    if(buf[1]&0x80){
-	printk("rs485_bus: 0x%02X device error comand 0x%02x\n",dev->id,buf[1]);
+    if(B[1]&0x80){
+	printk("rs485_bus: 0x%02X device error comand 0x%02x\n",dev->id,B[1]);
 	return -3;
     }
     m-=2;
-    crc=ModRTU_CRC(&m,buf);
-//    printk("CRC:0x%04x\tj:%d\n",crc,jiffies);
-    if((((unsigned char)(crc>>8))!=buf[m])||(((unsigned char)(crc))!=buf[m+1])){
+    crc=ModRTU_CRC(&m,&B);
+    if((((unsigned char)(crc>>8))!=B[m])||(((unsigned char)(crc))!=B[m+1])){
 	printk("rs485_bus: 0x%02X device error crc 0x%04x\n",dev->id,crc);
 	return -4;
     }
+    memset(buf,0,sizeof(unsigned char)*BUFSIZE);
     for(i=2;i<m;i++)
-	buf[i-2]=buf[i];
-    for(i=m;i<BUFSIZE;i++)
-	buf[i]=0;
+	buf[i-2]=B[i];
     return (m-2);
+}
+
+
+extern int fas_rs485_bus(struct device *dev){
+    unsigned char i,j;
+    for (i=0;i<trys;i++){
+	j=rs485_talk(dev);
+	if(j>0) return j;
+    }
 }
 EXPORT_SYMBOL( fas_rs485_bus );
 
