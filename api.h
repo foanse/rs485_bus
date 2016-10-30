@@ -2,7 +2,7 @@
 
 //extern struct device rs485_bus;
 //extern struct bus_type rs485_bus_type;
-
+#define BUFSIZE 250
 extern int fas_rs485_bus(struct device *);
 
 

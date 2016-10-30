@@ -120,8 +120,17 @@ static ssize_t show_bus_version(struct bus_type *bus, char *buf)
 static BUS_ATTR(version, 00444, show_bus_version, NULL);
 
 static int dr_probe(struct device_driver *dr, void *dev){
-    printk("probe...\n");
+    printk("driver probe...\n");
     return dr->probe(dev);
+}
+static int dv_probe(struct device *device, void *dev){
+    printk("device probe...\n");
+    struct device *D;
+    D=(struct device *)dev;
+    if(device->id==D->id)
+	return 1;
+    else
+	return 0;
 }
 
 static ssize_t show_count(struct bus_type *bus, char *buf)
@@ -144,7 +153,10 @@ static ssize_t show_count(struct bus_type *bus, char *buf)
 		memcpy(&(dev->dma_mask),&B,4);
 		printk("Rx:0x%02x%02x%02x%02x\n",B[0],B[1],B[2],B[3]);
 //		driver->probe(dev);
-		count+=bus_for_each_drv(bus,NULL,dev,dr_probe);
+		if(bus_for_each_dev(bus,NULL,dev,dv_probe))
+		    count++;
+		else
+		    count+=bus_for_each_drv(bus,NULL,dev,dr_probe);
 	    }
 	printk("count:%03d\ti:%03d\n",count,i);
 	}
@@ -169,8 +181,10 @@ static ssize_t store_count(struct bus_type *bus, const char *buf,size_t count)
 	if(fas_rs485_bus(dev)>0){
 	    memcpy(&(dev->dma_mask),&B,4);
 	    printk("Rx:0x%02x%02x%02x%02x\n",B[0],B[1],B[2],B[3]);
-	    if(bus_for_each_drv(bus,NULL,dev,dr_probe))
-		return count;
+		if(bus_for_each_dev(bus,NULL,dev,dv_probe))
+		    return -1;
+		if(bus_for_each_drv(bus,NULL,dev,dr_probe))
+		    return count;
 	    }
 	}
     return -1;
