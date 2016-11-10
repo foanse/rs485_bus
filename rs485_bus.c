@@ -42,93 +42,215 @@ static unsigned short ModRTU_CRC(unsigned char *len, unsigned char *buf)
     unsigned short crc = 0xFFFF;
     int pos,i;
     for (pos = 0; pos < *len; pos++) {
-        crc ^= (unsigned char)buf[pos];          // XOR byte into least sig. byte of crc
-    for (i = 8; i != 0; i--) {    // Loop over each bit
-        if ((crc & 0x0001) != 0) {      // If the LSB is set
-            crc >>= 1;                    // Shift right and XOR 0xA001
+        crc ^= (unsigned char)buf[pos];
+    for (i = 8; i != 0; i--) {
+        if ((crc & 0x0001) != 0) {
+            crc >>= 1;
             crc ^= 0xA001;
         }
-    else                            // Else LSB is not set
-        crc >>= 1;                    // Just shift right
+    else
+        crc >>= 1;
     }
     }
     return crc;
 }
-int rs485_talk(struct device *dev){
-    unsigned char *buf,i,m,B[BUFSIZE];
+
+int rs485_talk_rtu(unsigned char bus, unsigned char *buf, unsigned char count, unsigned char *res){
+    unsigned char i,m;
     unsigned short crc;
     u32 J;
-    do{
-	i = inb(PORT+UART_LSR);
-	m=inb(PORT);
-    }while( i & 1);
-    buf=(unsigned char *)(dev->platform_data);
-    m=buf[0]+1;
-    memcpy(&B,buf,m);
-    B[0]=dev->id;
-    crc=ModRTU_CRC(&m,&B);		//					printk("rs485_bus talk:\t%02x\t%02x\n",dev->id,m);
-    for(i=0;i<m;i++){
-	outb_s(PORT,B[i]);		//					printk(" 0x%02x",buf[i]);
-    }
+    do{i = inb(PORT+UART_LSR);m=inb(PORT);}while( i & 1);
+    crc=ModRTU_CRC(&count,buf);
+    for(i=0;i<count;i++) outb_s(PORT,buf[i]);
     outb_s(PORT,(unsigned char)(crc>>8));
-    outb_s(PORT,(unsigned char)(crc));	//					printk("crc:0x%02x\t0x%02x\n",(unsigned char)(crc>>8),(unsigned char)(crc));
-    memset(&B,0,BUFSIZE*sizeof(unsigned char));
+    outb_s(PORT,(unsigned char)(crc));
     J=jiffies+symbol*200;
     m=0;
     while(time_before(jiffies,J)){
 	i = inb(PORT+UART_LSR);
         if (i & 1) {
-	    B[m] = inb(PORT);
+	    res[m] = inb(PORT);
 	    if(m<BUFSIZE) m++;
 	    J=jiffies+symbol*4;
 	}
     }
     if(m<4){
-	printk("rs485_bus: 0x%02X device don`t responce (%d)\n",dev->id,m);
+	printk("rs485_bus: %d:0x%02X device don`t response (%d)\n",bus,buf[0],m);
 	return -1;
     }
-    if(dev->id!=B[0]){
-	printk("rs485_bus: 0x%02X responce error number 0x%02x\n",dev->id,B[0]);
+    if(buf[0]!=res[0]){
+	printk("rs485_bus: %d:0x%02X responce error number 0x%02x\n",bus,buf[0],res[0]);
 	return -2;
     }
-    if(B[1]&0x80){
-	printk("rs485_bus: 0x%02X device error comand 0x%02x\n",dev->id,B[1]);
+    if(res[1]&0x80){
+	printk("rs485_bus: %d:0x%02X device error comand 0x%02x\n",bus,buf[0],res[1]);
 	return -3;
     }
     m-=2;
-    crc=ModRTU_CRC(&m,&B);
-    if((((unsigned char)(crc>>8))!=B[m])||(((unsigned char)(crc))!=B[m+1])){
-	printk("rs485_bus: 0x%02X device error crc 0x%04x\n",dev->id,crc);
+    crc=ModRTU_CRC(&m,res);
+    if((((unsigned char)(crc>>8))!=res[m])||(((unsigned char)(crc))!=res[m+1])){
+	printk("rs485_bus: %d:0x%02X device error crc 0x%04x\n",bus,buf[0],crc);
 	return -4;
     }
-    memset(buf,0,sizeof(unsigned char)*BUFSIZE);
-    for(i=2;i<m;i++)
-	buf[i-2]=B[i];
     return (m-2);
 }
 
-
-extern int fas_rs485_bus(struct device *dev){
-    unsigned char i,j;
+extern int rs485_infdev(struct device *dev){
+    unsigned char i,j,a,bus,BUF[2],*B;
+    B=(unsigned char *)dev->platform_data;
+    bus=0;
+    BUF[0]=dev->id;
+    BUF[1]=0x11;
     for (i=0;i<trys;i++){
-	j=rs485_talk(dev);
-	if(j>0) return j;
+	j=rs485_talk_rtu(bus, &BUF, 2, B)-1;
+	if((j==B[2])&&(j>0)){
+	    for(a=0;a<j;a++)
+		B[a]=B[3+a];
+	    return j;
+	}
     }
+    return -1;
 }
-EXPORT_SYMBOL( fas_rs485_bus );
+EXPORT_SYMBOL( rs485_infdev );
+
+extern int rs485_message_count(struct device *dev){
+    unsigned char i,j,a,bus,BUF[2],*B;
+    B=(unsigned char *)dev->platform_data;
+    bus=0;
+    BUF[0]=dev->id;
+    BUF[1]=0x0B;
+    for (i=0;i<trys;i++){
+	if(rs485_talk_rtu(bus, &BUF, 2, B)==2){
+	    B[0]=B[2];
+	    B[1]=B[3];
+	    return 2;
+	}
+    }
+    return -1;
+}
+EXPORT_SYMBOL( rs485_message_count );
+
+extern int rs485_register_read(struct device *dev, unsigned short first, unsigned char count){
+    unsigned char i,j,a,bus,BUF[6],*B;
+    B=(unsigned char *)dev->platform_data;
+    bus=0;
+    BUF[0]=dev->id;
+    BUF[1]=0x04;
+    BUF[2]=(unsigned char)(first>>8);
+    BUF[3]=(unsigned char)first;
+    BUF[4]=0x00;
+    BUF[5]=count;
+    for (i=0;i<trys;i++){
+	j=rs485_talk_rtu(bus, &BUF, 6,B)-1;
+	if(j==(2*B[2])){
+	    for(a=0;a<j;a++) B[a]=B[3+a];
+	    return j;
+	}
+    }
+    return -1;
+}
+EXPORT_SYMBOL( rs485_register_read );
+
+extern int rs485_register_write(struct device *dev, unsigned short first, unsigned char count){
+    unsigned char i,j,a,bus,BUF[BUFSIZE],*B;
+    B=(unsigned char *)dev->platform_data;
+    bus=0;
+    BUF[0]=dev->id;
+    BUF[1]=0x10;
+    BUF[2]=(unsigned char)(first>>8);
+    BUF[3]=(unsigned char)first;
+    BUF[4]=0x00;
+    BUF[5]=count;
+    a=6+count;
+    if(a>BUFSIZE) return -1;
+    for(i=0;i<count;i++)
+	BUF[6+i]=B[i];
+    for (i=0;i<trys;i++){
+	if(rs485_talk_rtu(bus, &BUF, a,B)==4){
+	    for(a=0;a<4;a++) B[a]=B[2+a];
+	    return 4;
+	}
+    }
+    return -1;
+}
+EXPORT_SYMBOL( rs485_register_write );
+
+extern int rs485_register_write1(struct device *dev, unsigned short first){
+    unsigned char i,j,a,bus,BUF[6],*B;
+    B=(unsigned char *)dev->platform_data;
+    bus=0;
+    BUF[0]=dev->id;
+    BUF[1]=0x06;
+    BUF[2]=(unsigned char)(first>>8);
+    BUF[3]=(unsigned char)first;
+    BUF[4]=B[0];
+    BUF[5]=B[1];
+    for (i=0;i<trys;i++){
+	if(rs485_talk_rtu(bus, &BUF, 6,B)==4){
+	    for(a=0;a<4;a++) B[a]=B[2+a];
+	    return 4;
+	}
+    }
+    return -1;
+}
+EXPORT_SYMBOL( rs485_register_write1 );
+
+extern int rs485_coil_write(struct device *dev, unsigned short address, unsigned char val){
+    unsigned char i,j,a,bus,BUF[6],*B;
+    B=(unsigned char *)dev->platform_data;
+    bus=0;
+    BUF[0]=dev->id;
+    BUF[1]=0x05;
+    BUF[2]=(unsigned char)(address>>8);
+    BUF[3]=(unsigned char)address;
+    BUF[4]=0x00;
+    BUF[5]=0x00;
+    if(val==1)BUF[4]=0xFF;
+    if(val==0)BUF[5]=0XFF;
+    for (i=0;i<trys;i++){
+	if(rs485_talk_rtu(bus, &BUF, 6,B)==4){
+	    for(a=0;a<4;a++) B[a]=B[2+a];
+	    return 4;
+	}
+    }
+    return -1;
+}
+EXPORT_SYMBOL( rs485_coil_write );
+
+extern int rs485_coil_read(struct device *dev, unsigned short first, unsigned short count){
+    unsigned char i,j,a,bus,BUF[6],*B;
+    B=(unsigned char *)dev->platform_data;
+    bus=0;
+    BUF[0]=dev->id;
+    BUF[1]=0x01;
+    BUF[2]=(unsigned char)(first>>8);
+    BUF[3]=(unsigned char)first;
+    BUF[4]=(unsigned char)(count>>8);
+    BUF[5]=(unsigned char)count;
+    for (i=0;i<trys;i++){
+	j=rs485_talk_rtu(bus, &BUF, 6,B)-1;
+	if(j==B[2]){
+	    for(a=0;a<j;a++) B[a]=B[3+a];
+	    return j;
+	}
+    }
+    return -1;
+}
+EXPORT_SYMBOL( rs485_coil_read );
+
+
+
 
 static ssize_t show_bus_version(struct bus_type *bus, char *buf)
 {
-    return snprintf(buf, PAGE_SIZE, "123\n");
+    return snprintf(buf, PAGE_SIZE, "0.1");
 }
 static BUS_ATTR(version, 00444, show_bus_version, NULL);
 
 static int dr_probe(struct device_driver *dr, void *dev){
-    printk("driver probe...\n");
     return dr->probe(dev);
 }
 static int dv_probe(struct device *device, void *dev){
-    printk("device probe...\n");
     struct device *D;
     D=(struct device *)dev;
     if(device->id==D->id)
@@ -139,32 +261,30 @@ static int dv_probe(struct device *device, void *dev){
 
 static ssize_t show_count(struct bus_type *bus, char *buf)
 {
-    int i,count;
+    int i,count,t;
     struct device *dev;
     unsigned char B[BUFSIZE];
     count=0;
+    t=trys;
+    trys=1;
     dev=kmalloc(sizeof(struct device),GFP_KERNEL);
     if(dev){
-	for(i=10;i<17;i++){
+	for(i=1;i<256;i++){
 	    memset(dev, 0, sizeof(struct device));
 	    memset(&B,0,sizeof(unsigned char)*BUFSIZE);
 	    dev->id=i;
 	    dev->bus=bus;
 	    dev->platform_data=&B;
-	    B[0]=1;
-	    B[1]=0x11;
-	    if(fas_rs485_bus(dev)>0){
+	    if(rs485_infdev(dev)>0){
 		memcpy(&(dev->dma_mask),&B,4);
-		printk("Rx:0x%02x%02x%02x%02x\n",B[0],B[1],B[2],B[3]);
-//		driver->probe(dev);
 		if(bus_for_each_dev(bus,NULL,dev,dv_probe))
 		    count++;
 		else
 		    count+=bus_for_each_drv(bus,NULL,dev,dr_probe);
 	    }
-	printk("count:%03d\ti:%03d\n",count,i);
 	}
     }
+    trys=t;
     return snprintf(buf, PAGE_SIZE, "%03d\n",count);
 }
 static ssize_t store_count(struct bus_type *bus, const char *buf,size_t count)
@@ -180,17 +300,14 @@ static ssize_t store_count(struct bus_type *bus, const char *buf,size_t count)
 	dev->id=i;
 	dev->bus=bus;
 	dev->platform_data=&B;
-	B[0]=1;
-	B[1]=0x11;
-	if(fas_rs485_bus(dev)>0){
+	if(rs485_infdev(dev)>0){
 	    memcpy(&(dev->dma_mask),&B,4);
-	    printk("Rx:0x%02x%02x%02x%02x\n",B[0],B[1],B[2],B[3]);
-		if(bus_for_each_dev(bus,NULL,dev,dv_probe))
-		    return -1;
-		if(bus_for_each_drv(bus,NULL,dev,dr_probe))
-		    return count;
-	    }
+	    if(bus_for_each_dev(bus,NULL,dev,dv_probe))
+		return -1;
+	    if(bus_for_each_drv(bus,NULL,dev,dr_probe))
+		return count;
 	}
+    }
     return -1;
 }
 
@@ -217,7 +334,6 @@ static int rs485_match(struct device *dev, struct device_driver *driver){
 struct bus_type rs485_bus_type = {
     .name = "fas_rs485",
     .match = rs485_match,
-//    .hotplug  = rs485_hotplug,
 };
 
 
@@ -235,16 +351,16 @@ int register_rs485_device(struct device *dev){
     dev->release = rs485_dev_release;
     sprintf(buf, "%d:%d:%s",B,dev->id,dev->init_name);
     dev->init_name=buf;
-    printk("rs485_bus: device registered!\n");
+    printk("rs485_bus: %s device registered!\n",buf);
     return device_register(dev);
 }
 EXPORT_SYMBOL(register_rs485_device);
 void unregister_rs485_device(struct device *dev)
 {
+    unsigned char B=0;
+    printk("rs485_bus: %d:%d:%s device unregistered!\n",B,dev->id,dev->init_name);
     device_unregister(dev);
     dev=NULL;
-    printk("rs485_bus: device unregistered!\n");
-
 }
 EXPORT_SYMBOL(unregister_rs485_device);
 
@@ -256,23 +372,9 @@ EXPORT_SYMBOL(unregister_rs485_device);
 int register_rs485_driver(struct device_driver *driver)
 {
     int ret;
-//    struct device *dev;
-//    unsigned char buf[4];
     driver->bus = &rs485_bus_type;
     ret = driver_register(driver);
-
-/*    dev=kmalloc(sizeof(struct device),GFP_KERNEL);
-    if(dev){
-        memset(dev, 0, sizeof(struct device));
-	dev->id=255;
-	buf[0]=0x03;
-	buf[1]=0x23;
-	buf[2]=0x01;
-	buf[3]=0xFF;
-	memcpy(&(dev->dma_mask),&buf,4);
-        driver->probe(dev);
-    }
-*/    return ret;
+    return ret;
 }
 
 void unregister_rs485_driver(struct device_driver *driver)

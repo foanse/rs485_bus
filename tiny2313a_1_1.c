@@ -27,10 +27,10 @@ struct tiny1{
     struct timespec lasttime;
     struct list_head list;
     struct device dev;
-    struct device_attribute *out;
-    struct device_attribute *block;
+    struct device_attribute *out;/*********/
+    struct device_attribute *block;/*********/
     struct device_attribute reley[2];/*********/
-    struct device_attribute spi[2];
+    struct device_attribute spi[2];/*********/
     struct device_attribute mem[2];
     struct device_attribute version;/*********/
     struct device_attribute count;/*********/
@@ -38,24 +38,24 @@ struct tiny1{
     struct device_attribute error;/*********/
     struct device_attribute last;/*********/
 };
-
-
 LIST_HEAD( list );
-
 #define to_tiny(_dev) container_of(_dev, struct tiny1, dev);
 
 static ssize_t show_ver(struct device *dev, struct device_attribute *attr, char *buf){
-    unsigned char *B;
+    int i,k,r=-1;
     struct tiny1 *T;
-    T=to_tiny(dev);
+    unsigned char *B;
     B=(unsigned char *)dev->platform_data;
-    B[0]=1;
-    B[1]=0x11;
-    if(0<fas_rs485_bus(dev)){
+    T=to_tiny(dev);
+    k=rs485_infdev(dev);
+    if((k>0)&&(k<BUFSIZE)){
+	sprintf(buf,"0x%02X",B[0]);
+	for(i=1;i<k;i++)
+	    r=sprintf(buf,"%s-0x%02X",buf,B[i]);
 	T->lasttime=CURRENT_TIME_SEC;
-	return sprintf(buf,"0x%02X-0x%02X",B[1],B[2]);
+	return r;
     }else{
-	T->errors+=1;
+	T->errors++;
 	return sprintf(buf,"error (%d)",T->errors);
     }
 }
@@ -65,126 +65,101 @@ static ssize_t show_err(struct device *dev, struct device_attribute *attr, char 
     return sprintf(buf,"%d",T->errors);
 }
 static ssize_t show_count(struct device *dev, struct device_attribute *attr, char *buf){
-    unsigned char *B;
+    int i;
     struct tiny1 *T;
-    int c;
-    T=to_tiny(dev);
+    unsigned char *B;
     B=(unsigned char *)dev->platform_data;
-    B[0]=1;
-    B[1]=0x0B;
-    if(fas_rs485_bus(dev)>0){
+    T=to_tiny(dev);
+    if(rs485_message_count(dev)==2){
+	i=(B[0]<<8)|B[1];
+	return sprintf(buf,"%06d",i);
 	T->lasttime=CURRENT_TIME_SEC;
-	c=(B[0]<<8)|B[1];
-	return sprintf(buf,"%d",c);
     }else{
-	T->errors+=1;
+	T->errors++;
 	return sprintf(buf,"error (%d)",T->errors);
     }
 }
 
 static ssize_t show_reley(struct device *dev, struct device_attribute *attr, char *buf){
-    unsigned char *B;
     struct tiny1 *T;
-    int c,i;
-    i=0;
-    T=to_tiny(dev);
+    unsigned char *B;
     B=(unsigned char *)dev->platform_data;
-    B[0]=5;
-    B[1]=0x03;
-    B[2]=0;
-    B[3]=192;
-    B[4]=0;
-    B[5]=1;
-    c=fas_rs485_bus(dev);
-    if(0<c){
+    T=to_tiny(dev);
+    int i=0;
+    if(rs485_register_read(dev,192,1)==2){
 	T->lasttime=CURRENT_TIME_SEC;
 	if(strcmp(attr->attr.name,"reley0")==0)
-	    i=(0x01&B[2]);
+	    i=(0x01&B[1]);
 	if(strcmp(attr->attr.name,"reley1")==0)
-	    i=(0x10&B[2])>>4;
+	    i=(0x10&B[1])>>4;
 	return sprintf(buf,"%d",i);
     }else{
-	T->errors+=1;
+	T->errors++;
 	return sprintf(buf,"error (%d)",T->errors);
     }
 }
+
 static ssize_t store_reley(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
-    unsigned char *B;
+    int i=0;
     struct tiny1 *T;
-    int c;
-    T=to_tiny(dev);
+    unsigned char *B;
     B=(unsigned char *)dev->platform_data;
-    B[0]=5;
-    B[1]=0x06;
-    B[2]=0;
-    B[3]=192;
-    B[4]=0;
-	if(strcmp(attr->attr.name,"reley0")==0){
-	    if(buf[0]=='0') B[5]=0x02;
-	    if(buf[0]=='1') B[5]=0x01;
-	}
-	if(strcmp(attr->attr.name,"reley1")==0){
-	    if(buf[0]=='0') B[5]=0x08;
-	    if(buf[0]=='1') B[5]=0x04;
-	}
-    c=fas_rs485_bus(dev);
-    if(0<c){
+    T=to_tiny(dev);
+    B[0]=0x00;
+    if(strcmp(attr->attr.name,"reley0")==0){
+	if(buf[0]=='0') B[1]=0x02;
+	if(buf[0]=='1') B[1]=0x01;
+    }
+    if(strcmp(attr->attr.name,"reley1")==0){
+	if(buf[0]=='0') B[1]=0x08;
+	if(buf[0]=='1') B[1]=0x04;
+    }
+    if(rs485_register_write1(dev,192)==4){
 	T->lasttime=CURRENT_TIME_SEC;
 	return count;
     }else{
-	T->errors+=1;
+	T->errors++;
 	return -1;
     }
 }
 
 static ssize_t show_spi(struct device *dev, struct device_attribute *attr, char *buf){
-    unsigned char *B;
     struct tiny1 *T;
-    int c,i;
-    i=0;
-    T=to_tiny(dev);
+    unsigned char *B,A;
     B=(unsigned char *)dev->platform_data;
-    B[0]=5;
-    B[1]=0x03;
-    B[2]=0;
+    T=to_tiny(dev);
+    int i=0;
     if(strcmp(attr->attr.name,"_spi0")==0)
-	B[3]=193;
+	A=193;
     if(strcmp(attr->attr.name,"_spi1")==0)
-	B[3]=194;
-    B[4]=0;
-    B[5]=1;
-    c=fas_rs485_bus(dev);
-    if(0<c){
+	A=194;
+    if(rs485_register_read(dev,A,1)==2){
 	T->lasttime=CURRENT_TIME_SEC;
-	return sprintf(buf,"%d",B[2]);
+	return sprintf(buf,"%d",B[1]);
     }else{
-	T->errors+=1;
+	T->errors++;
 	return sprintf(buf,"error (%d)",T->errors);
     }
+
 }
 static ssize_t store_spi(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
-    unsigned char *B;
     struct tiny1 *T;
-    int c;
-    T=to_tiny(dev);
+    unsigned char *B,A;
     B=(unsigned char *)dev->platform_data;
-    B[0]=5;
-    B[1]=0x06;
-    B[2]=0;
+    T=to_tiny(dev);
+    B[0]=0x00;
+    sscanf(buf, "%du", &A);
+    if(A>18) A=18;
+    B[1]=A;
     if(strcmp(attr->attr.name,"_spi0")==0)
-	B[3]=193;
+	A=193;
     if(strcmp(attr->attr.name,"_spi1")==0)
-	B[3]=194;
-    B[4]=0;
-    sscanf(buf, "%du", &c);
-    if(c>18) c=18;
-    B[5]=c;
-    c=fas_rs485_bus(dev);
-    if(0<c){
+	A=194;
+    if(rs485_register_write1(dev,A)==4){
 	T->lasttime=CURRENT_TIME_SEC;
 	return count;
     }else{
-	T->errors+=1;
+	T->errors++;
 	return -1;
     }
 }
@@ -195,25 +170,19 @@ static ssize_t show_id(struct device *dev, struct device_attribute *attr, char *
     return sprintf(buf,"%03d",dev->id);
 }
 static ssize_t store_id(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
-    unsigned char *B;
     struct tiny1 *T;
-    int c;
-    T=to_tiny(dev);
+    unsigned char *B,A;
     B=(unsigned char *)dev->platform_data;
-    B[0]=5;
-    B[1]=0x06;
-    B[2]=0;
-    B[3]=195;
-    B[4]=0;
-    sscanf(buf, "%du", &c);
-    if((c>255)||(c<1))
-	return -1;
-    B[5]=c;
-    if(fas_rs485_bus(dev)>0){
+    T=to_tiny(dev);
+    B[0]=0x00;
+    sscanf(buf, "%du", &A);
+    if(A<1) return -1;
+    B[1]=A;
+    if(rs485_register_write1(dev,195)==4){
 	T->lasttime=CURRENT_TIME_SEC;
 	return count;
     }else{
-	T->errors+=1;
+	T->errors++;
 	return -1;
     }
 }
@@ -229,19 +198,169 @@ static ssize_t show_last(struct device *dev, struct device_attribute *attr, char
     return sprintf(buf,"%d",J);
 }
 
+static unsigned char number(unsigned char f,unsigned char s){
+    unsigned char R;
+    switch (f){
+	case '0':R=0x00;
+		break;
+	case '1':R=0x10;
+		break;
+	case '2':R=0x20;
+		break;
+	case '3':R=0x30;
+		break;
+	case '4':R=0x40;
+		break;
+	case '5':R=0x50;
+		break;
+	case '6':R=0x60;
+		break;
+	case '7':R=0x70;
+		break;
+	case '8':R=0x80;
+		break;
+	case '9':R=0x90;
+		break;
+	case 'a':
+	case 'A':R=0xA0;
+		break;
+	case 'b':
+	case 'B':R=0xB0;
+		break;
+	case 'c':
+	case 'C':R=0xC0;
+		break;
+	case 'd':
+	case 'D':R=0xD0;
+		break;
+	case 'e':
+	case 'E':R|=0x0E;
+		break;
+	case 'f':
+	case 'F':R=0xF0;
+		break;
+    }
+    switch (s){
+	case '0':R|=0x00;
+		break;
+	case '1':R|=0x01;
+		break;
+	case '2':R|=0x02;
+		break;
+	case '3':R|=0x03;
+		break;
+	case '4':R|=0x04;
+		break;
+	case '5':R|=0x05;
+		break;
+	case '6':R|=0x06;
+		break;
+	case '7':R|=0x07;
+		break;
+	case '8':R|=0x08;
+		break;
+	case '9':R|=0x09;
+		break;
+	case 'a':
+	case 'A':R|=0x0A;
+		break;
+	case 'b':
+	case 'B':R|=0x0B;
+		break;
+	case 'c':
+	case 'C':R|=0x0C;
+		break;
+	case 'd':
+	case 'D':R|=0x0D;
+		break;
+	case 'e':
+	case 'E':R|=0x0E;
+		break;
+	case 'f':
+	case 'F':R|=0x0F;
+		break;
+    }
+    return R;
+}
+
+
 static ssize_t show_out(struct device *dev, struct device_attribute *attr, char *buf){
-return sprintf(buf,"nice try\n");
+    int i;
+    struct tiny1 *T;
+    unsigned char *B;
+    B=(unsigned char *)dev->platform_data;
+    T=to_tiny(dev);
+    i=number(attr->attr.name[4],attr->attr.name[5]);
+    if(rs485_coil_read(dev,i,1)==1){
+	T->lasttime=CURRENT_TIME_SEC;
+	if(B[0]==0x01)
+	    return sprintf(buf,"1");
+	else
+	    return sprintf(buf,"0");
+    }else{
+	T->errors++;
+	return sprintf(buf,"error (%d)",T->errors);
+    }
 }
 static ssize_t store_out(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
-
-return -1;
+    int i,v;
+    struct tiny1 *T;
+    unsigned char *B;
+    T=to_tiny(dev);
+    i=number(attr->attr.name[4],attr->attr.name[5]);
+    switch(buf[0]){
+	case '0':v=0;break;
+	case '1':v=1;break;
+	case 'o':v=0;i+=64*8+8*8;break;
+	case 'i':v=1;i+=64*8+8*8;break;
+    }
+    if(rs485_coil_write(dev,i,v)==4){
+	T->lasttime=CURRENT_TIME_SEC;
+	return count;
+    }else{
+	T->errors++;
+	return -1;
+    }
 }
+
 static ssize_t show_block(struct device *dev, struct device_attribute *attr, char *buf){
-return sprintf(buf,"nice try\n");
+    int i;
+    struct tiny1 *T;
+    unsigned char *B;
+    B=(unsigned char *)dev->platform_data;
+    T=to_tiny(dev);
+    i=number(attr->attr.name[6],attr->attr.name[7])+(32*8);
+    if(rs485_coil_read(dev,i,1)==1){
+	T->lasttime=CURRENT_TIME_SEC;
+	if(B[0]==0x01)
+	    return sprintf(buf,"1");
+	else
+	    return sprintf(buf,"0");
+    }else{
+	T->errors++;
+	return sprintf(buf,"error (%d)",T->errors);
+    }
 }
 static ssize_t store_block(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
+    int i,v;
+    struct tiny1 *T;
+    unsigned char *B;
+    T=to_tiny(dev);
+    i=number(attr->attr.name[6],attr->attr.name[7])+(32*8);
+    switch(buf[0]){
+	case '0':v=0;break;
+	case '1':v=1;break;
+	case 'o':v=0;i+=(64+40)*8;break;
+	case 'i':v=1;i+=(64+40)*8;break;
+    }
+    if(rs485_coil_write(dev,i,v)==4){
+	T->lasttime=CURRENT_TIME_SEC;
+	return count;
+    }else{
+	T->errors++;
+	return -1;
+    }
 
-return -1;
 }
 
 
@@ -254,23 +373,14 @@ struct device_driver tiny2313a={
 static void create_pins(struct tiny1 *item){
     unsigned char *B;
     int c,i;
-    i=0;
-    B=(unsigned char *)item->dev.platform_data;
-    B[0]=5;
-    B[1]=0x03;
-    B[2]=0;
-    B[3]=193;
-    B[4]=0;
-    B[5]=2;
-    c=fas_rs485_bus(&(item->dev));
-    if(4<c){
-	item->lasttime=CURRENT_TIME_SEC;
-	i=(B[2]&0x3F)+(B[4]&0x3F);
-    }else{
-	item->errors+=1;
-	i=0;
+    if(rs485_register_read(&(item->dev),193,2)!=4){
+	item->errors++;
+	return;
     }
-    if(i>36) i=0;
+    item->lasttime=CURRENT_TIME_SEC;
+    B=(unsigned char *)item->dev.platform_data;
+    i=(B[1]&0x3F)+(B[3]&0x3F);
+    if(i>32) i=0;
     item->pins=i*8;
     item->out=kmalloc(sizeof(struct device_attribute)*(item->pins),GFP_KERNEL);
     item->block=kmalloc(sizeof(struct device_attribute)*(item->pins),GFP_KERNEL);
@@ -288,6 +398,7 @@ static void create_pins(struct tiny1 *item){
 	item->block[i].store=store_block;
 	device_create_file(&(item->dev),&(item->block[i]));
 	}
+
 }
 static void remove_pins(struct tiny1 *item){
     int i;
@@ -304,15 +415,14 @@ static int tiny2313a_probe(struct device *dev){
     unsigned char *B;
     struct tiny1 *item;
     memcpy(&buf,&(dev->dma_mask),4);
-    printk("0x%x\t0x%x\t0x%x\t0x%x\n",buf[0],buf[1],buf[2],buf[3]);
-    if((buf[1]==0x23)&&(buf[2]==0x01)){
+    if((buf[0]==0x23)&&(buf[1]==0x01)){
 	item=kmalloc(sizeof(struct tiny1),GFP_KERNEL);
 	if(item){
 	    memset(item, 0, sizeof(struct tiny1));
 	    B=kmalloc(sizeof(unsigned char)*BUFSIZE,GFP_KERNEL);
 	    memset(B, 0, sizeof(unsigned char)*BUFSIZE);
 	    item->dev.platform_data=B;
-	    item->pins=8;
+	    item->pins=0;
 	    item->lasttime=CURRENT_TIME_SEC;
 	    item->errors=0;
 	    item->dev.id=dev->id;
@@ -330,7 +440,7 @@ static int tiny2313a_probe(struct device *dev){
 	    item->error.show=show_err;
 	    item->error.store=NULL;
 	device_create_file(&(item->dev),&(item->error));
-	    item->last.attr.name="_sincetime";
+	    item->last.attr.name="_lasttime";
 	    item->last.attr.mode=00444;
 	    item->last.show=show_last;
 	    item->last.store=NULL;
@@ -365,13 +475,7 @@ static int tiny2313a_probe(struct device *dev){
 	    item->count.show=show_count;
 	    item->count.store=NULL;
 	device_create_file(&(item->dev),&(item->count));
-
 	create_pins(item);
-
-//    struct device_attribute count_dev[2];
-//    struct device_attribute mem[2];
-
-
 	return 1;
 	}
     }
@@ -397,7 +501,6 @@ static int __init dev_init( void )
     register_rs485_driver(&tiny2313a);
     printk( KERN_ALERT "rs485_dev: loaded!\n" );
     return 0;
-
 }
 
 module_init( dev_init );
