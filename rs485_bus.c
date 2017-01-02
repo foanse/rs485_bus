@@ -5,7 +5,7 @@
 #include <linux/ioport.h>
 #include <linux/types.h>
 #include <linux/delay.h>
-#include <linux/jiffies.h>
+//#include <linux/jiffies.h>
 
 
 #include <linux/kobject.h>
@@ -23,7 +23,28 @@
 #include <linux/semaphore.h>
 
 #include "api.h"
+void __iomem *gpio;
+void __iomem *uart;
+#define GPIO 0x3F200000
+#define GPFSEL1         0x00000004
+#define GPFSEL2         0x00000008
+#define GPSET0          0x0000001C
+#define GPCLR0          0x00000028
 
+#define GPPUD           0x00000094
+#define GPPUDCLK0       0x00000098
+
+#define UART 0x3F215000
+#define AUX_ENABLES     0x00000004
+#define AUX_MU_IO_REG   0x00000040
+#define AUX_MU_IER_REG  0x00000044
+#define AUX_MU_IIR_REG  0x00000048
+#define AUX_MU_LCR_REG  0x0000004C
+#define AUX_MU_MCR_REG  0x00000050
+#define AUX_MU_LSR_REG  0x00000054
+#define AUX_MU_CNTL_REG 0x00000060
+#define AUX_MU_BAUD_REG 0x00000068
+#define SYMB udelay(208)
 
 MODULE_LICENSE( "GPL" );
 MODULE_AUTHOR( "Andrey Fokin <foanse@gmail.com>" );
@@ -31,10 +52,17 @@ MODULE_DESCRIPTION( "rs485_bus" );
 static int trys=4;
 module_param(trys,int, S_IRUGO);
 
-#define PORT 0x3F8
-#define symbol 1
-#define outb_s(port,command) outb(command,port)
-#define inb_s(port) inb(port)
+
+uint32_t GET32 (void *address ){
+    uint32_t R;
+    R=ioread32(address);
+    mb();
+    return R;
+}
+void PUT32 ( void *address, uint32_t value ){
+    iowrite32(value,address);
+    mb();
+}
 
 
 static unsigned short ModRTU_CRC(unsigned char *len, unsigned char *buf)
@@ -54,26 +82,64 @@ static unsigned short ModRTU_CRC(unsigned char *len, unsigned char *buf)
     }
     return crc;
 }
+void sendchar(unsigned char A){
+    unsigned char i;
+    uint32_t R;
+    i=5;
+    while(i>0){
+	R = GET32(uart+AUX_MU_LSR_REG);
+        if (R & (1<<5)) {
+	    PUT32(uart+AUX_MU_IO_REG,A);
+	    return;
+	}
+	SYMB;
+	i--;
+    }
+}
 
 int rs485_talk_rtu(unsigned char bus, unsigned char *buf, unsigned char count, unsigned char *res){
     unsigned char i,m;
+    uint32_t R;
     unsigned short crc;
-    u32 J;
-    do{i = inb(PORT+UART_LSR);m=inb(PORT);}while( i & 1);
-    crc=ModRTU_CRC(&count,buf);
-    for(i=0;i<count;i++) outb_s(PORT,buf[i]);
-    outb_s(PORT,(unsigned char)(crc>>8));
-    outb_s(PORT,(unsigned char)(crc));
-    J=jiffies+symbol*200;
+
+    i=4;
     m=0;
-    while(time_before(jiffies,J)){
-	i = inb(PORT+UART_LSR);
-        if (i & 1) {
-	    res[m] = inb(PORT);
+    while(i>0){
+	R = GET32(uart+AUX_MU_LSR_REG);
+        if (R & 1) {
+	    R = GET32(uart+AUX_MU_IO_REG);
+	    i = 5;
+	    m++;
+	    if(m>250){
+		printk("rs485_bus: %d:0x%02X line is busy\n",bus,buf[0]);
+		return -1;
+	    }
+	}
+	SYMB;
+	i--;
+    }
+    PUT32(gpio+GPSET0,(1<<23));
+    crc=ModRTU_CRC(&count,buf);
+    for(i=0;i<count;i++) sendchar(buf[i]);
+    sendchar((unsigned char)(crc>>8));
+    sendchar((unsigned char)(crc));
+    do {R=GET32(uart+AUX_MU_LSR_REG);}while(!(R & (1<<6)));
+    PUT32(gpio+GPCLR0,(1<<23));
+    i=100;
+    m=0;
+    while(i>0){
+	R = GET32(uart+AUX_MU_LSR_REG);
+        if (R & 1) {
+	    res[m] = GET32(uart+AUX_MU_IO_REG);
 	    if(m<BUFSIZE) m++;
-	    J=jiffies+symbol*4;
+	    i=10;
+	}
+	else{
+	    SYMB;
+	    i--;
 	}
     }
+
     if(m<4){
 	printk("rs485_bus: %d:0x%02X device don`t response (%d)\n",bus,buf[0],m);
 	return -1;
@@ -102,7 +168,7 @@ extern int rs485_infdev(struct device *dev){
     BUF[0]=dev->id;
     BUF[1]=0x11;
     for (i=0;i<trys;i++){
-	j=rs485_talk_rtu(bus, &BUF, 2, B)-1;
+	j=rs485_talk_rtu(bus, BUF, 2, B)-1;
 	if((j==B[2])&&(j>0)){
 	    for(a=0;a<j;a++)
 		B[a]=B[3+a];
@@ -114,13 +180,13 @@ extern int rs485_infdev(struct device *dev){
 EXPORT_SYMBOL( rs485_infdev );
 
 extern int rs485_message_count(struct device *dev){
-    unsigned char i,j,a,bus,BUF[2],*B;
+    unsigned char i,bus,BUF[2],*B;
     B=(unsigned char *)dev->platform_data;
     bus=0;
     BUF[0]=dev->id;
     BUF[1]=0x0B;
     for (i=0;i<trys;i++){
-	if(rs485_talk_rtu(bus, &BUF, 2, B)==2){
+	if(rs485_talk_rtu(bus, BUF, 2, B)==2){
 	    B[0]=B[2];
 	    B[1]=B[3];
 	    return 2;
@@ -141,7 +207,7 @@ extern int rs485_register_read(struct device *dev, unsigned short first, unsigne
     BUF[4]=0x00;
     BUF[5]=count;
     for (i=0;i<trys;i++){
-	j=rs485_talk_rtu(bus, &BUF, 6,B)-1;
+	j=rs485_talk_rtu(bus, BUF, 6,B)-1;
 	if(j==(2*B[2])){
 	    for(a=0;a<j;a++) B[a]=B[3+a];
 	    return j;
@@ -152,7 +218,7 @@ extern int rs485_register_read(struct device *dev, unsigned short first, unsigne
 EXPORT_SYMBOL( rs485_register_read );
 
 extern int rs485_register_write(struct device *dev, unsigned short first, unsigned char count){
-    unsigned char i,j,a,bus,BUF[BUFSIZE],*B;
+    unsigned char i,a,bus,BUF[BUFSIZE],*B;
     B=(unsigned char *)dev->platform_data;
     bus=0;
     BUF[0]=dev->id;
@@ -166,7 +232,7 @@ extern int rs485_register_write(struct device *dev, unsigned short first, unsign
     for(i=0;i<count;i++)
 	BUF[6+i]=B[i];
     for (i=0;i<trys;i++){
-	if(rs485_talk_rtu(bus, &BUF, a,B)==4){
+	if(rs485_talk_rtu(bus, BUF, a,B)==4){
 	    for(a=0;a<4;a++) B[a]=B[2+a];
 	    return 4;
 	}
@@ -176,7 +242,7 @@ extern int rs485_register_write(struct device *dev, unsigned short first, unsign
 EXPORT_SYMBOL( rs485_register_write );
 
 extern int rs485_register_write1(struct device *dev, unsigned short first){
-    unsigned char i,j,a,bus,BUF[6],*B;
+    unsigned char i,a,bus,BUF[6],*B;
     B=(unsigned char *)dev->platform_data;
     bus=0;
     BUF[0]=dev->id;
@@ -186,7 +252,7 @@ extern int rs485_register_write1(struct device *dev, unsigned short first){
     BUF[4]=B[0];
     BUF[5]=B[1];
     for (i=0;i<trys;i++){
-	if(rs485_talk_rtu(bus, &BUF, 6,B)==4){
+	if(rs485_talk_rtu(bus, BUF, 6,B)==4){
 	    for(a=0;a<4;a++) B[a]=B[2+a];
 	    return 4;
 	}
@@ -196,7 +262,7 @@ extern int rs485_register_write1(struct device *dev, unsigned short first){
 EXPORT_SYMBOL( rs485_register_write1 );
 
 extern int rs485_coil_write(struct device *dev, unsigned short address, unsigned char val){
-    unsigned char i,j,a,bus,BUF[6],*B;
+    unsigned char i,a,bus,BUF[6],*B;
     B=(unsigned char *)dev->platform_data;
     bus=0;
     BUF[0]=dev->id;
@@ -208,7 +274,7 @@ extern int rs485_coil_write(struct device *dev, unsigned short address, unsigned
     if(val==1)BUF[4]=0xFF;
     if(val==0)BUF[5]=0XFF;
     for (i=0;i<trys;i++){
-	if(rs485_talk_rtu(bus, &BUF, 6,B)==4){
+	if(rs485_talk_rtu(bus, BUF, 6,B)==4){
 	    for(a=0;a<4;a++) B[a]=B[2+a];
 	    return 4;
 	}
@@ -228,7 +294,7 @@ extern int rs485_coil_read(struct device *dev, unsigned short first, unsigned sh
     BUF[4]=(unsigned char)(count>>8);
     BUF[5]=(unsigned char)count;
     for (i=0;i<trys;i++){
-	j=rs485_talk_rtu(bus, &BUF, 6,B)-1;
+	j=rs485_talk_rtu(bus, BUF, 6,B)-1;
 	if(j==B[2]){
 	    for(a=0;a<j;a++) B[a]=B[3+a];
 	    return j;
@@ -393,22 +459,41 @@ static void __exit bus_exit( void )
 }
 
 static void __init serialport_init(void){
-    outb_s(PORT + UART_IER,0);/* Turn off interrupts - Port1 */
-    outb_s(PORT + UART_LCR,UART_LCR_DLAB);/* SET DLAB ON */
-    outb_s(PORT + UART_DLL,0x0C);
-    outb_s(PORT + UART_DLM,0x00);/* Set Baud rate - Divisor Latch High Byte */
-    outb_s(PORT + UART_LCR,UART_LCR_WLEN8);/* 8 Bits, No Parity, 1 Stop Bit */
-    outb_s(PORT + UART_FCR,UART_FCR_TRIGGER_14|UART_FCR_ENABLE_FIFO|UART_FCR_CLEAR_RCVR|UART_FCR_CLEAR_XMIT);/* FIFO Control Register */
-    outb_s(PORT + UART_MCR,UART_MCR_OUT2); /* Turn on DTR, RTS, and OUT2 */
-    outb_s(PORT + UART_LCR,inb(PORT + UART_LCR)&(~UART_LCR_DLAB));/* SET DLAB OFF */
+    uint32_t ra;
+    gpio=ioremap_nocache(GPIO,640);
+    ra=GET32(gpio+GPFSEL1);
+    ra&=~(7<<12); //gpio14
+    ra|=2<<12;    //alt5
+    ra&=~(7<<15); //gpio15
+    ra|=2<<15;    //alt5
+    PUT32(gpio+GPFSEL1,ra);
+
+    ra=GET32(gpio+GPFSEL2);
+    ra&=~(7<<9); //gpio23
+    ra|=1<<9;    //output
+    PUT32(gpio+GPFSEL2,ra);
+
+    PUT32(gpio+GPPUD,0);
+    PUT32(gpio+GPPUDCLK0,(1<<14)|(1<<15));
+    PUT32(gpio+GPPUDCLK0,0);
+
+    uart=ioremap_nocache(UART,496);
+    PUT32(uart+AUX_ENABLES,1);
+    PUT32(uart+AUX_MU_IER_REG,0);
+    PUT32(uart+AUX_MU_LCR_REG,3);
+    PUT32(uart+AUX_MU_MCR_REG,0);
+    PUT32(uart+AUX_MU_IIR_REG,0x3);
+    PUT32(uart+AUX_MU_BAUD_REG,3254);
+    PUT32(uart+AUX_MU_CNTL_REG,3);
 }
 
 
 
 static int __init bus_init( void )
 {
-    serialport_init();
     int ret;
+    serialport_init();
+
     ret = bus_register(&rs485_bus_type);
     if (ret)
 	return ret;
