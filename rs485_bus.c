@@ -5,8 +5,6 @@
 #include <linux/ioport.h>
 #include <linux/types.h>
 #include <linux/delay.h>
-//#include <linux/jiffies.h>
-
 
 #include <linux/kobject.h>
 #include <linux/string.h>
@@ -49,7 +47,8 @@ void __iomem *uart;
 MODULE_LICENSE( "GPL" );
 MODULE_AUTHOR( "Andrey Fokin <foanse@gmail.com>" );
 MODULE_DESCRIPTION( "rs485_bus" );
-static int trys=4;
+static int trys=10;
+static int try;
 module_param(trys,int, S_IRUGO);
 
 
@@ -141,33 +140,33 @@ int rs485_talk_rtu(unsigned char bus, unsigned char *buf, unsigned char count, u
     }
 
     if(m<4){
-	printk("rs485_bus: %d:0x%02X device don`t response (%d)\n",bus,buf[0],m);
+	printk("rs485_bus: %d:0x%02X device don`t response (%d) [%d/%d]\n",bus,buf[0],m,try,trys);
 	return -1;
     }
     if(buf[0]!=res[0]){
-	printk("rs485_bus: %d:0x%02X responce error number 0x%02x\n",bus,buf[0],res[0]);
+	printk("rs485_bus: %d:0x%02X responce error number 0x%02x [%d/%d]\n",bus,buf[0],res[0],try,trys);
 	return -2;
     }
     if(res[1]&0x80){
-	printk("rs485_bus: %d:0x%02X device error comand 0x%02x\n",bus,buf[0],res[1]);
+	printk("rs485_bus: %d:0x%02X device error comand 0x%02x [%d/%d]\n",bus,buf[0],res[1],try,trys);
 	return -3;
     }
     m-=2;
     crc=ModRTU_CRC(&m,res);
     if((((unsigned char)(crc>>8))!=res[m])||(((unsigned char)(crc))!=res[m+1])){
-	printk("rs485_bus: %d:0x%02X device error crc 0x%04x\n",bus,buf[0],crc);
+	printk("rs485_bus: %d:0x%02X device error crc 0x%04x [%d/%d]\n",bus,buf[0],crc,try,trys);
 	return -4;
     }
     return (m-2);
 }
 
 extern int rs485_infdev(struct device *dev){
-    unsigned char i,j,a,bus,BUF[2],*B;
+    unsigned char j,a,bus,BUF[2],*B;
     B=(unsigned char *)dev->platform_data;
     bus=0;
     BUF[0]=dev->id;
     BUF[1]=0x11;
-    for (i=0;i<trys;i++){
+    for (try=0;try<trys;try++){
 	j=rs485_talk_rtu(bus, BUF, 2, B)-1;
 	if((j==B[2])&&(j>0)){
 	    for(a=0;a<j;a++)
@@ -180,12 +179,12 @@ extern int rs485_infdev(struct device *dev){
 EXPORT_SYMBOL( rs485_infdev );
 
 extern int rs485_message_count(struct device *dev){
-    unsigned char i,bus,BUF[2],*B;
+    unsigned char bus,BUF[2],*B;
     B=(unsigned char *)dev->platform_data;
     bus=0;
     BUF[0]=dev->id;
     BUF[1]=0x0B;
-    for (i=0;i<trys;i++){
+    for (try=0;try<trys;try++){
 	if(rs485_talk_rtu(bus, BUF, 2, B)==2){
 	    B[0]=B[2];
 	    B[1]=B[3];
@@ -197,7 +196,7 @@ extern int rs485_message_count(struct device *dev){
 EXPORT_SYMBOL( rs485_message_count );
 
 extern int rs485_register_read(struct device *dev, unsigned short first, unsigned char count){
-    unsigned char i,j,a,bus,BUF[6],*B;
+    unsigned char j,a,bus,BUF[6],*B;
     B=(unsigned char *)dev->platform_data;
     bus=0;
     BUF[0]=dev->id;
@@ -206,7 +205,7 @@ extern int rs485_register_read(struct device *dev, unsigned short first, unsigne
     BUF[3]=(unsigned char)first;
     BUF[4]=0x00;
     BUF[5]=count;
-    for (i=0;i<trys;i++){
+    for (try=0;try<trys;try++){
 	j=rs485_talk_rtu(bus, BUF, 6,B)-1;
 	if(j==(2*B[2])){
 	    for(a=0;a<j;a++) B[a]=B[3+a];
@@ -231,7 +230,7 @@ extern int rs485_register_write(struct device *dev, unsigned short first, unsign
     if(a>BUFSIZE) return -1;
     for(i=0;i<count;i++)
 	BUF[6+i]=B[i];
-    for (i=0;i<trys;i++){
+    for (try=0;try<trys;try++){
 	if(rs485_talk_rtu(bus, BUF, a,B)==4){
 	    for(a=0;a<4;a++) B[a]=B[2+a];
 	    return 4;
@@ -242,7 +241,7 @@ extern int rs485_register_write(struct device *dev, unsigned short first, unsign
 EXPORT_SYMBOL( rs485_register_write );
 
 extern int rs485_register_write1(struct device *dev, unsigned short first){
-    unsigned char i,a,bus,BUF[6],*B;
+    unsigned char a,bus,BUF[6],*B;
     B=(unsigned char *)dev->platform_data;
     bus=0;
     BUF[0]=dev->id;
@@ -251,7 +250,7 @@ extern int rs485_register_write1(struct device *dev, unsigned short first){
     BUF[3]=(unsigned char)first;
     BUF[4]=B[0];
     BUF[5]=B[1];
-    for (i=0;i<trys;i++){
+    for (try=0;try<trys;try++){
 	if(rs485_talk_rtu(bus, BUF, 6,B)==4){
 	    for(a=0;a<4;a++) B[a]=B[2+a];
 	    return 4;
@@ -262,7 +261,7 @@ extern int rs485_register_write1(struct device *dev, unsigned short first){
 EXPORT_SYMBOL( rs485_register_write1 );
 
 extern int rs485_coil_write(struct device *dev, unsigned short address, unsigned char val){
-    unsigned char i,a,bus,BUF[6],*B;
+    unsigned char a,bus,BUF[6],*B;
     B=(unsigned char *)dev->platform_data;
     bus=0;
     BUF[0]=dev->id;
@@ -273,7 +272,7 @@ extern int rs485_coil_write(struct device *dev, unsigned short address, unsigned
     BUF[5]=0x00;
     if(val==1)BUF[4]=0xFF;
     if(val==0)BUF[5]=0XFF;
-    for (i=0;i<trys;i++){
+    for (try=0;try<trys;try++){
 	if(rs485_talk_rtu(bus, BUF, 6,B)==4){
 	    for(a=0;a<4;a++) B[a]=B[2+a];
 	    return 4;
@@ -284,7 +283,7 @@ extern int rs485_coil_write(struct device *dev, unsigned short address, unsigned
 EXPORT_SYMBOL( rs485_coil_write );
 
 extern int rs485_coil_read(struct device *dev, unsigned short first, unsigned short count){
-    unsigned char i,j,a,bus,BUF[6],*B;
+    unsigned char j,a,bus,BUF[6],*B;
     B=(unsigned char *)dev->platform_data;
     bus=0;
     BUF[0]=dev->id;
@@ -293,7 +292,7 @@ extern int rs485_coil_read(struct device *dev, unsigned short first, unsigned sh
     BUF[3]=(unsigned char)first;
     BUF[4]=(unsigned char)(count>>8);
     BUF[5]=(unsigned char)count;
-    for (i=0;i<trys;i++){
+    for (try=0;try<trys;try++){
 	j=rs485_talk_rtu(bus, BUF, 6,B)-1;
 	if(j==B[2]){
 	    for(a=0;a<j;a++) B[a]=B[3+a];

@@ -1,4 +1,3 @@
-//#include <linux/config.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/init.h>
@@ -27,18 +26,18 @@ struct tiny1{
     struct timespec lasttime;
     struct list_head list;
     struct device dev;
-    struct device_attribute *out;/*********/
-    struct device_attribute *block;/*********/
-    struct device_attribute reley[2];	/*********/
-    struct device_attribute __reley[2];	/*********/
+    struct device_attribute *out;
+    struct device_attribute *block;
+    struct device_attribute reley[2];
+    struct device_attribute __reley[2];
     struct device_attribute spi[2];
     struct device_attribute __spi[2];
-    struct device_attribute mem[2];	/*********/
-    struct device_attribute version;	/*********/
-    struct device_attribute count;	/*********/
-    struct device_attribute id;		/*********/
-    struct device_attribute error;	/*********/
-    struct device_attribute last;	/*********/
+    struct device_attribute mem[2];
+    struct device_attribute version;
+    struct device_attribute count;
+    struct device_attribute id;
+    struct device_attribute error;
+    struct device_attribute last;
 };
 LIST_HEAD( list );
 #define to_tiny(_dev) container_of(_dev, struct tiny1, dev);
@@ -59,7 +58,8 @@ static ssize_t show_ver(struct device *dev, struct device_attribute *attr, char 
 	return r;
     }else{
 	T->errors++;
-	return sprintf(buf,"error (%d)",T->errors);
+	return -1;
+//	return sprintf(buf,"error (%d)",T->errors);
     }
 }
 static ssize_t show_err(struct device *dev, struct device_attribute *attr, char *buf){
@@ -79,7 +79,8 @@ static ssize_t show_count(struct device *dev, struct device_attribute *attr, cha
 	T->lasttime=CURRENT_TIME_SEC;
     }else{
 	T->errors++;
-	return sprintf(buf,"error (%d)",T->errors);
+	return -1;
+//	return sprintf(buf,"error (%d)",T->errors);
     }
 }
 
@@ -93,7 +94,8 @@ static ssize_t show_mem(struct device *dev, struct device_attribute *attr, char 
 	return sprintf(buf,"%d",B[1]);
     }else{
 	T->errors++;
-	return sprintf(buf,"error (%d)",T->errors);
+	return -1;
+//	return sprintf(buf,"error (%d)",T->errors);
     }
 }
 
@@ -142,7 +144,8 @@ static ssize_t show_reley(struct device *dev, struct device_attribute *attr, cha
 	return sprintf(buf,"%d",i);
     }else{
 	T->errors++;
-	return sprintf(buf,"error (%d)",T->errors);
+	return -1;
+//	return sprintf(buf,"error (%d)",T->errors);
     }
 }
 
@@ -185,7 +188,8 @@ static ssize_t show_Ereley(struct device *dev, struct device_attribute *attr, ch
 	return sprintf(buf,"%d",i);
     }else{
 	T->errors++;
-	return sprintf(buf,"error (%d)",T->errors);
+	return -1;
+//	return sprintf(buf,"error (%d)",T->errors);
     }
 }
 
@@ -223,7 +227,8 @@ static ssize_t show_spi(struct device *dev, struct device_attribute *attr, char 
 	return sprintf(buf,"%d",B[1]&0x3F);
     }else{
 	T->errors++;
-	return sprintf(buf,"error (%d)",T->errors);
+	return -1;
+//	return sprintf(buf,"error (%d)",T->errors);
     }
 
 }
@@ -265,7 +270,8 @@ static ssize_t show_Espi(struct device *dev, struct device_attribute *attr, char
 	return sprintf(buf,"%d",B[1]&0x3F);
     }else{
 	T->errors++;
-	return sprintf(buf,"error (%d)",T->errors);
+	return -1;
+//	return sprintf(buf,"error (%d)",T->errors);
     }
 
 }
@@ -291,10 +297,6 @@ static ssize_t store_Espi(struct device *dev, struct device_attribute *attr,cons
 	return -1;
     }
 }
-
-
-
-
 
 static ssize_t show_id(struct device *dev, struct device_attribute *attr, char *buf){
     return sprintf(buf,"%03d",dev->id);
@@ -429,7 +431,8 @@ static ssize_t show_out(struct device *dev, struct device_attribute *attr, char 
 	    return sprintf(buf,"0");
     }else{
 	T->errors++;
-	return sprintf(buf,"error (%d)",T->errors);
+	return -1;
+//	return sprintf(buf,"error (%d)",T->errors);
     }
 }
 static ssize_t store_out(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
@@ -467,7 +470,8 @@ static ssize_t show_block(struct device *dev, struct device_attribute *attr, cha
 	    return sprintf(buf,"0");
     }else{
 	T->errors++;
-	return sprintf(buf,"error (%d)",T->errors);
+	return -1;
+//	return sprintf(buf,"error (%d)",T->errors);
     }
 }
 static ssize_t store_block(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
@@ -488,9 +492,7 @@ static ssize_t store_block(struct device *dev, struct device_attribute *attr,con
 	T->errors++;
 	return -1;
     }
-
 }
-
 
 static int tiny2313a_probe(struct device *dev);
 struct device_driver tiny2313a={
@@ -526,7 +528,6 @@ static void create_pins(struct tiny1 *item){
 	item->block[i].store=store_block;
 	device_create_file(&(item->dev),&(item->block[i]));
 	}
-
 }
 static void remove_pins(struct tiny1 *item){
     int i;
@@ -603,8 +604,6 @@ static int tiny2313a_probe(struct device *dev){
 	    item->count.show=show_count;
 	    item->count.store=NULL;
 	device_create_file(&(item->dev),&(item->count));
-
-
 	    item->__reley[0].attr.name="__reley0";
 	    item->__reley[0].attr.mode=00600;
 	    item->__reley[0].show=show_Ereley;
@@ -635,8 +634,6 @@ static int tiny2313a_probe(struct device *dev){
 	    item->mem[1].show=show_mem;
 	    item->mem[1].store=store_mem;
 	device_create_file(&(item->dev),&(item->mem[1]));
-
-
 	create_pins(item);
 	return 1;
 	}
