@@ -1,5 +1,5 @@
-CURRENT = "4.4.39-v7"
-#CURRENT = $(shell uname -r)
+#CURRENT = "4.4.39-v7"
+CURRENT = $(shell uname -r)
 KDIR = /lib/modules/$(CURRENT)/build
 PWD = $(shell pwd)
 DEST = /lib/modules/$(CURRENT)/misc
