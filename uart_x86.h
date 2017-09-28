@@ -68,7 +68,7 @@ int rs485_talk_rtu(unsigned char bus, unsigned char *buf, unsigned char count, u
 	}
     }
     if(m<4){
-	printk("rs485_bus: %d:0x%02X device don`t response (%d)\n",bus,buf[0],m);
+//	printk("rs485_bus: %d:0x%02X device don`t response (%d)\n",bus,buf[0],m);
 	return -1;
     }
     if(buf[0]!=res[0]){
