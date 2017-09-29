@@ -31,12 +31,12 @@ struct mega1{
     struct device_attribute __reley[2];
     struct device_attribute jetter;
     struct device_attribute _jetter;
-    struct device_attribute LOG[2];//!!!!!!!!!!!!!!!!!!!!
+    struct device_attribute LOG[2];
     struct device_attribute odometr[3];
     struct device_attribute balans;
     struct device_attribute minutes;
-    struct device_attribute comand;//!!!!!!!!!!!!!!!!!!!!
-    struct device_attribute _auto;//!!!!!!!!!!!!!!!!!!!!
+    struct device_attribute comand;
+    struct device_attribute _auto;
     struct device_attribute TEMP_IN;
     struct device_attribute TEMP_OUT;
     struct device_attribute TEMP_BOX;
@@ -397,8 +397,95 @@ static ssize_t store_minutes(struct device *dev, struct device_attribute *attr,c
     }
 }
 
+static ssize_t show_comand(struct device *dev, struct device_attribute *attr, char *buf){
+    return sprintf(buf,"1 - search 1-wire\n2 - measure temperature\n3 - get all temperature\n4 - get heating temperature\n5 - added odometrs\n6 - check balans\n");
+}
 
+static ssize_t store_comand(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
+    struct mega1 *T;
+    unsigned char *B;
+    int A;
+    B=(unsigned char *)dev->platform_data;
+    T=to_mega1(dev);
+    B[0]=0x00;
+    sscanf(buf, "%du", &A);
+    switch(A){
+	case 1:B[1]=0x01;break;
+	case 2:B[1]=0x02;break;
+	case 3:B[1]=0x04;break;
+	case 4:B[1]=0x40;break;
+	case 5:B[1]=0x20;break;
+	case 6:B[1]=0x80;break;
+    default:
+	return -1;
+    }
+    if(rs485_register_write1(dev,1)==4){
+	T->lasttime=CURRENT_TIME_SEC;
+	return count;
+    }else{
+	T->errors++;
+	return -1;
+    }
+}
 
+static ssize_t show_auto(struct device *dev, struct device_attribute *attr, char *buf){
+    struct mega1 *T;
+    unsigned char *B;
+    B=(unsigned char *)dev->platform_data;
+    T=to_mega1(dev);
+    if(rs485_register_read(dev,6,2)==2){
+	T->lasttime=CURRENT_TIME_SEC;
+	return sprintf(buf,"%02x",B[1]);
+    }else{
+	T->errors++;
+	return -1;
+    }
+}
+
+static ssize_t store_auto(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
+    struct mega1 *T;
+    unsigned char *B;
+    unsigned int i;
+    B=(unsigned char *)dev->platform_data;
+    T=to_mega1(dev);
+    B[0]=0x00;
+    sscanf(buf, "%02x", &i);
+    B[1]=(unsigned char)i;
+    if(rs485_register_write1(dev,2)==4){
+	T->lasttime=CURRENT_TIME_SEC;
+	return count;
+    }else{
+	T->errors++;
+	return -1;
+    }
+}
+
+static ssize_t show_logt(struct device *dev, struct device_attribute *attr, char *buf){
+    struct mega1 *T;
+    unsigned char *B;
+    B=(unsigned char *)dev->platform_data;
+    T=to_mega1(dev);
+    if(rs485_register_read(dev,4,2)==2){
+	T->lasttime=CURRENT_TIME_SEC;
+	return sprintf(buf,"%d %d",B[0],B[1]);
+    }else{
+	T->errors++;
+	return -1;
+    }
+}
+static ssize_t show_log(struct device *dev, struct device_attribute *attr, char *buf){
+    struct mega1 *T;
+    unsigned char *B;
+    B=(unsigned char *)dev->platform_data;
+    T=to_mega1(dev);
+    if(rs485_register_read(dev,3,2)==2)
+	if(rs485_register_write1(dev,2)==4){
+	    T->lasttime=CURRENT_TIME_SEC;
+	    return sprintf(buf,"%d %d",B[0],B[1]);
+    }
+    T->errors++;
+    return -1;
+}
 
 static unsigned char number(unsigned char f,unsigned char s){
     unsigned char R;
@@ -531,7 +618,7 @@ static ssize_t store_temp(struct device *dev, struct device_attribute *attr,cons
 
 static ssize_t show_temp_id(struct device *dev, struct device_attribute *attr, char *buf){
     struct mega1 *T;
-    unsigned char *B,j,k;
+    unsigned char *B,j;
     B=(unsigned char *)dev->platform_data;
     T=to_mega1(dev);
     j=number(0x00,attr->attr.name[3])*8+129;
@@ -539,7 +626,7 @@ static ssize_t show_temp_id(struct device *dev, struct device_attribute *attr, c
     if(attr->attr.name[3]=='D') j=40;
     if(attr->attr.name[3]=='I') j=48;
     if(attr->attr.name[3]=='O') j=56;
-    if(rs485_register_read(dev,j+k,8)==16){
+    if(rs485_register_read(dev,j,8)==16){
 	T->lasttime=CURRENT_TIME_SEC;
 	return sprintf(buf,"%02x.%02x%02x%02x%02x%02x%02x%02x",B[1],B[3],B[5],B[7],B[9],B[11],B[13],B[15]);
     }else{
@@ -548,9 +635,9 @@ static ssize_t show_temp_id(struct device *dev, struct device_attribute *attr, c
     }
 }
 static ssize_t store_temp_id(struct device *dev, struct device_attribute *attr,const char *buf, size_t count){
-    unsigned char D[8],j,i;
+    unsigned int D[8];
     struct mega1 *T;
-    unsigned char *B;
+    unsigned char *B,j,i;
     B=(unsigned char *)dev->platform_data;
     T=to_mega1(dev);
     sscanf(buf, "%02x.%02x%02x%02x%02x%02x%02x%02x", &D[0],&D[1],&D[2],&D[3],&D[4],&D[5],&D[6],&D[7]);
@@ -812,6 +899,27 @@ static int mega8a1_probe(struct device *dev){
 	    item->ID_DOOR.show=show_temp_id;
 	    item->ID_DOOR.store=store_temp_id;
 	device_create_file(&(item->dev),&(item->ID_DOOR));
+	    item->comand.attr.name="comand";
+	    item->comand.attr.mode=00444;
+	    item->comand.show=show_comand;
+	    item->comand.store=store_comand;
+	device_create_file(&(item->dev),&(item->comand));
+	    item->_auto.attr.name="_auto";
+	    item->_auto.attr.mode=00444;
+	    item->_auto.show=show_auto;
+	    item->_auto.store=store_auto;
+	device_create_file(&(item->dev),&(item->_auto));
+	    item->LOG[0].attr.name="tmp";
+	    item->LOG[0].attr.mode=00444;
+	    item->LOG[0].show=show_logt;
+	    item->LOG[0].store=NULL;
+	device_create_file(&(item->dev),&(item->LOG[0]));
+	    item->LOG[1].attr.name="log";
+	    item->LOG[1].attr.mode=00444;
+	    item->LOG[1].show=show_log;
+	    item->LOG[1].store=NULL;
+	device_create_file(&(item->dev),&(item->LOG[1]));
+
 	    for (i=0;i<16;i++){
 		item->out[i].attr.name=kmalloc(7,GFP_KERNEL);
 		snprintf((char *)item->out[i].attr.name,7,"out_%02x",i);

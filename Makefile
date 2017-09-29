@@ -7,11 +7,7 @@ DEST = /lib/modules/$(CURRENT)/misc
 #EXTRA_CFLAGS += -E
 
 TARGET1 = rs485_bus
-<<<<<<< HEAD
 TARGET2 = mega8a_1_1
-=======
-TARGET2 = atmega8_heating
->>>>>>> 1d4d4b75554d3f4353cc6434ca7b74a13bef79b3
 TARGET3 = tiny2313a_1_1
 obj-m	:= $(TARGET1).o $(TARGET2).o $(TARGET3).o
 #obj-m	:= $(TARGET1).o $(TARGET3).o
