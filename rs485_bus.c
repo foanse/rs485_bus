@@ -41,6 +41,7 @@ extern int rs485_infdev(struct device *dev){
 	if((j==B[2])&&(j>0)){
 	    for(a=0;a<j;a++)
 		B[a]=B[3+a];
+    printk("rs485_bus: %d:%d get answer\n",B[3],B[4]);
 	    return j;
 	}
     }

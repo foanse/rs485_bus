@@ -154,9 +154,9 @@ static ssize_t show_reley(struct device *dev, struct device_attribute *attr, cha
     i=0;
     if(rs485_register_read(dev,8,1)==2){
 	T->lasttime=CURRENT_TIME_SEC;
-	if(strcmp(attr->attr.name,"reley0")==0)
-	    i=(0x01&B[1]);
 	if(strcmp(attr->attr.name,"reley1")==0)
+	    i=(0x01&B[1]);
+	if(strcmp(attr->attr.name,"reley0")==0)
 	    i=(0x02&B[1])>>1;
 	return sprintf(buf,"%d",i);
     }else{
@@ -198,9 +198,9 @@ static ssize_t show_Ereley(struct device *dev, struct device_attribute *attr, ch
     if(rs485_register_read(dev,EER+4,1)==2){
 	T->lasttime=CURRENT_TIME_SEC;
 	if(strcmp(attr->attr.name,"__reley0")==0)
-	    i=(0x08&B[1])>>3;
-	if(strcmp(attr->attr.name,"__reley1")==0)
 	    i=(0x10&B[1])>>4;
+	if(strcmp(attr->attr.name,"__reley1")==0)
+	    i=(0x08&B[1])>>3;
 	return sprintf(buf,"%d",i);
     }else{
 	T->errors++;
@@ -212,8 +212,8 @@ static ssize_t store_Ereley(struct device *dev, struct device_attribute *attr,co
     struct mega1 *T;
     unsigned short B,V;
     T=to_mega1(dev);
-    if(strcmp(attr->attr.name,"__reley0")==0) B=(EER+4)*8+3;
-    if(strcmp(attr->attr.name,"__reley1")==0) B=(EER+4)*8+4;
+    if(strcmp(attr->attr.name,"__reley0")==0) B=(EER+4)*8+4;
+    if(strcmp(attr->attr.name,"__reley1")==0) B=(EER+4)*8+3;
     V=100;
     if(buf[0]=='0') V=0;
     if(buf[0]=='1') V=1;
@@ -261,13 +261,11 @@ static ssize_t show_last(struct device *dev, struct device_attribute *attr, char
 static ssize_t show_jetter(struct device *dev, struct device_attribute *attr, char *buf){
     struct mega1 *T;
     unsigned char *B;
-    int i;
     B=(unsigned char *)dev->platform_data;
     T=to_mega1(dev);
-    i=0;
     if(rs485_register_read(dev,7,1)==2){
 	T->lasttime=CURRENT_TIME_SEC;
-	return sprintf(buf,"%d",B[1]);
+	return sprintf(buf,"%d",(signed char)B[1]);
     }else{
 	T->errors++;
 	return -1;
@@ -282,7 +280,7 @@ static ssize_t store_jetter(struct device *dev, struct device_attribute *attr,co
     B[0]=0x00;
     sscanf(buf, "%du", &A);
     if(A*A>16129) return -1;
-    B[1]=(char)A;
+    B[1]=(signed char)A;
     if(rs485_register_write1(dev,7)==4){
 	T->lasttime=CURRENT_TIME_SEC;
 	return count;
@@ -297,10 +295,10 @@ static ssize_t show_Ejetter(struct device *dev, struct device_attribute *attr, c
     int i;
     B=(unsigned char *)dev->platform_data;
     T=to_mega1(dev);
-    i=0;
     if(rs485_register_read(dev,EER+7,1)==2){
 	T->lasttime=CURRENT_TIME_SEC;
-	return sprintf(buf,"%d",B[1]);
+	i=(char)B[1];
+	return sprintf(buf,"%d",i);
     }else{
 	T->errors++;
 	return -1;
@@ -316,7 +314,7 @@ static ssize_t store_Ejetter(struct device *dev, struct device_attribute *attr,c
     B[0]=0x00;
     sscanf(buf, "%du", &A);
     if(A*A>16129) return -1;
-    B[1]=(char)A;
+    B[1]=(signed char)A;
     if(rs485_register_write1(dev,EER+7)==4){
 	T->lasttime=CURRENT_TIME_SEC;
 	return count;
@@ -353,7 +351,7 @@ static ssize_t show_balans(struct device *dev, struct device_attribute *attr, ch
     T=to_mega1(dev);
     if(rs485_register_read(dev,5,1)==2){
 	T->lasttime=CURRENT_TIME_SEC;
-	i=(B[0]<<8)|B[1];
+	i=(short)((B[0]<<8)|B[1]);
 	return sprintf(buf,"%d",i);
     }else{
 	T->errors++;
@@ -465,7 +463,7 @@ static ssize_t show_logt(struct device *dev, struct device_attribute *attr, char
     unsigned char *B;
     B=(unsigned char *)dev->platform_data;
     T=to_mega1(dev);
-    if(rs485_register_read(dev,4,2)==2){
+    if(rs485_register_read(dev,4,1)==2){
 	T->lasttime=CURRENT_TIME_SEC;
 	return sprintf(buf,"%d %d",B[0],B[1]);
     }else{
@@ -475,13 +473,16 @@ static ssize_t show_logt(struct device *dev, struct device_attribute *attr, char
 }
 static ssize_t show_log(struct device *dev, struct device_attribute *attr, char *buf){
     struct mega1 *T;
-    unsigned char *B;
+    unsigned char *B,R[2];
     B=(unsigned char *)dev->platform_data;
     T=to_mega1(dev);
-    if(rs485_register_read(dev,3,2)==2)
-	if(rs485_register_write1(dev,2)==4){
+    if(rs485_register_read(dev,3,1)==2){
+	R[0]=B[0];
+	R[1]=B[1];
+	if(rs485_register_write1(dev,3)==4){
 	    T->lasttime=CURRENT_TIME_SEC;
-	    return sprintf(buf,"%d %d",B[0],B[1]);
+	    return sprintf(buf,"%d %d",R[0],R[1]);
+	}
     }
     T->errors++;
     return -1;
@@ -578,7 +579,7 @@ static ssize_t show_temp(struct device *dev, struct device_attribute *attr, char
     int i,j;
     B=(unsigned char *)dev->platform_data;
     T=to_mega1(dev);
-    i=number(0x00,attr->attr.name[5])+309;
+    i=number('0',attr->attr.name[5])+289;
     if(attr->attr.name[5]=='B') i=72;
     if(attr->attr.name[5]=='D') i=73;
     if(attr->attr.name[5]=='I') i=74;
@@ -618,17 +619,18 @@ static ssize_t store_temp(struct device *dev, struct device_attribute *attr,cons
 
 static ssize_t show_temp_id(struct device *dev, struct device_attribute *attr, char *buf){
     struct mega1 *T;
-    unsigned char *B,j;
+    unsigned char *B;
+    unsigned short j;
     B=(unsigned char *)dev->platform_data;
     T=to_mega1(dev);
-    j=number(0x00,attr->attr.name[3])*8+129;
+    j=number('0',attr->attr.name[3])*8+129;
     if(attr->attr.name[3]=='B') j=32;
     if(attr->attr.name[3]=='D') j=40;
     if(attr->attr.name[3]=='I') j=48;
     if(attr->attr.name[3]=='O') j=56;
     if(rs485_register_read(dev,j,8)==16){
 	T->lasttime=CURRENT_TIME_SEC;
-	return sprintf(buf,"%02x.%02x%02x%02x%02x%02x%02x%02x",B[1],B[3],B[5],B[7],B[9],B[11],B[13],B[15]);
+	return sprintf(buf,"%02x.%02x.%02x.%02x.%02x.%02x.%02x-%02x",B[1],B[3],B[5],B[7],B[9],B[11],B[13],B[15]);
     }else{
 	T->errors++;
 	return -1;
@@ -640,8 +642,8 @@ static ssize_t store_temp_id(struct device *dev, struct device_attribute *attr,c
     unsigned char *B,j,i;
     B=(unsigned char *)dev->platform_data;
     T=to_mega1(dev);
-    sscanf(buf, "%02x.%02x%02x%02x%02x%02x%02x%02x", &D[0],&D[1],&D[2],&D[3],&D[4],&D[5],&D[6],&D[7]);
-    j=number(0x00,attr->attr.name[3])*8+129;
+    sscanf(buf, "%02x.%02x.%02x.%02x.%02x.%02x.%02x-%02x", &D[0],&D[1],&D[2],&D[3],&D[4],&D[5],&D[6],&D[7]);
+    j=number('0',attr->attr.name[3])*8+129;
     if(attr->attr.name[3]=='B') j=32;
     if(attr->attr.name[3]=='D') j=40;
     if(attr->attr.name[3]=='I') j=48;
@@ -763,109 +765,109 @@ static int mega8a1_probe(struct device *dev){
 	    item->version.attr.mode=00444;
 	    item->version.show=show_ver;
 	    item->version.store=NULL;
-	device_create_file(&(item->dev),&(item->version));
+	device_create_file(&(item->dev),&(item->version));//++++++++++
 	    item->error.attr.name="_errors";
 	    item->error.attr.mode=00444;
 	    item->error.show=show_err;
 	    item->error.store=NULL;
-	device_create_file(&(item->dev),&(item->error));
+	device_create_file(&(item->dev),&(item->error));//++++++++++
 	    item->last.attr.name="_lasttime";
 	    item->last.attr.mode=00444;
 	    item->last.show=show_last;
 	    item->last.store=NULL;
-	device_create_file(&(item->dev),&(item->last));
+	device_create_file(&(item->dev),&(item->last));//++++++++++
 	    item->reley[0].attr.name="reley0";
 	    item->reley[0].attr.mode=00666;
 	    item->reley[0].show=show_reley;
 	    item->reley[0].store=store_reley;
-	device_create_file(&(item->dev),&(item->reley[0]));
+	device_create_file(&(item->dev),&(item->reley[0]));//++++++++++
 	    item->reley[1].attr.name="reley1";
 	    item->reley[1].attr.mode=00666;
 	    item->reley[1].show=show_reley;
 	    item->reley[1].store=store_reley;
-	device_create_file(&(item->dev),&(item->reley[1]));
+	device_create_file(&(item->dev),&(item->reley[1]));//++++++++++
 	    item->id.attr.name="_id";
 	    item->id.attr.mode=00644;
 	    item->id.show=show_id;
 	    item->id.store=store_id;
-	device_create_file(&(item->dev),&(item->id));
+	device_create_file(&(item->dev),&(item->id));//++++++++++
 	    item->count.attr.name="_count";
 	    item->count.attr.mode=00444;
 	    item->count.show=show_count;
 	    item->count.store=NULL;
-	device_create_file(&(item->dev),&(item->count));
+	device_create_file(&(item->dev),&(item->count));//++++++++++
 	    item->__reley[0].attr.name="__reley0";
 	    item->__reley[0].attr.mode=00600;
 	    item->__reley[0].show=show_Ereley;
 	    item->__reley[0].store=store_Ereley;
-	device_create_file(&(item->dev),&(item->__reley[0]));
+	device_create_file(&(item->dev),&(item->__reley[0]));//++++++++++
 	    item->__reley[1].attr.name="__reley1";
 	    item->__reley[1].attr.mode=00600;
 	    item->__reley[1].show=show_Ereley;
 	    item->__reley[1].store=store_Ereley;
-	device_create_file(&(item->dev),&(item->__reley[1]));
+	device_create_file(&(item->dev),&(item->__reley[1]));//++++++++++
 	    item->mem[0].attr.name="__mem_adr";
 	    item->mem[0].attr.mode=00600;
 	    item->mem[0].show=show_mem0;
 	    item->mem[0].store=store_mem0;
-	device_create_file(&(item->dev),&(item->mem[0]));
+	device_create_file(&(item->dev),&(item->mem[0]));//++++++++++
 	    item->mem[1].attr.name="__mem_data";
 	    item->mem[1].attr.mode=00600;
 	    item->mem[1].show=show_mem;
 	    item->mem[1].store=store_mem;
-	device_create_file(&(item->dev),&(item->mem[1]));
-	    item->reley[1].attr.name="jetter";
-	    item->reley[1].attr.mode=00666;
-	    item->reley[1].show=show_jetter;
-	    item->reley[1].store=store_jetter;
-	device_create_file(&(item->dev),&(item->jetter));
-	    item->reley[1].attr.name="__jetter";
-	    item->reley[1].attr.mode=00600;
-	    item->reley[1].show=show_Ejetter;
-	    item->reley[1].store=store_Ejetter;
-	device_create_file(&(item->dev),&(item->_jetter));
+	device_create_file(&(item->dev),&(item->mem[1]));//++++++++++
+	    item->jetter.attr.name="jetter";
+	    item->jetter.attr.mode=00600;
+	    item->jetter.show=show_jetter;
+	    item->jetter.store=store_jetter;
+	device_create_file(&(item->dev),&(item->jetter));//++++++++++
+	    item->_jetter.attr.name="__jetter";
+	    item->_jetter.attr.mode=00600;
+	    item->_jetter.show=show_Ejetter;
+	    item->_jetter.store=store_Ejetter;
+	device_create_file(&(item->dev),&(item->_jetter));//++++++++++
 	    item->odometr[0].attr.name="odometr_a";
 	    item->odometr[0].attr.mode=00444;
 	    item->odometr[0].show=show_odometr;
 	    item->odometr[0].store=NULL;
-	device_create_file(&(item->dev),&(item->odometr[0]));
+	device_create_file(&(item->dev),&(item->odometr[0]));//++++++++++
 	    item->odometr[1].attr.name="odometr_b";
 	    item->odometr[1].attr.mode=00444;
 	    item->odometr[1].show=show_odometr;
 	    item->odometr[1].store=NULL;
-	device_create_file(&(item->dev),&(item->odometr[1]));
+	device_create_file(&(item->dev),&(item->odometr[1]));//++++++++++
 	    item->odometr[2].attr.name="odometr_c";
 	    item->odometr[2].attr.mode=00444;
 	    item->odometr[2].show=show_odometr;
 	    item->odometr[2].store=NULL;
-	device_create_file(&(item->dev),&(item->odometr[2]));
+	device_create_file(&(item->dev),&(item->odometr[2]));//++++++++++
 	    item->balans.attr.name="balans";
 	    item->balans.attr.mode=00444;
 	    item->balans.show=show_balans;
 	    item->balans.store=NULL;
-	device_create_file(&(item->dev),&(item->balans));
+	device_create_file(&(item->dev),&(item->balans));//++++++++++
 	    item->minutes.attr.name="minutes";
 	    item->minutes.attr.mode=00666;
 	    item->minutes.show=show_minutes;
 	    item->minutes.store=store_minutes;
-	device_create_file(&(item->dev),&(item->minutes));
+	device_create_file(&(item->dev),&(item->minutes));//++++++++++
 	    item->TEMP_IN.attr.name="TEMP_IN";
 	    item->TEMP_IN.attr.mode=00444;
 	    item->TEMP_IN.show=show_temp;
 	    item->TEMP_IN.store=NULL;
-	device_create_file(&(item->dev),&(item->TEMP_IN));
+	device_create_file(&(item->dev),&(item->TEMP_IN));//++++++++++
 	    item->TEMP_OUT.attr.name="TEMP_OUT";
 	    item->TEMP_OUT.attr.mode=00444;
 	    item->TEMP_OUT.show=show_temp;
 	    item->TEMP_OUT.store=NULL;
-	device_create_file(&(item->dev),&(item->TEMP_OUT));
+	device_create_file(&(item->dev),&(item->TEMP_OUT));//++++++++++
 	    item->TEMP_BOX.attr.name="TEMP_BOX";
 	    item->TEMP_BOX.attr.mode=00444;
 	    item->TEMP_BOX.show=show_temp;
 	    item->TEMP_BOX.store=NULL;
-	device_create_file(&(item->dev),&(item->TEMP_BOX));
+	device_create_file(&(item->dev),&(item->TEMP_BOX));//++++++++++
 	    item->TEMP_SET.attr.name="TEMP_SET";
-	    item->TEMP_SET.attr.mode=00444;
+	    item->TEMP_SET.attr.mode=00666;
 	    item->TEMP_SET.show=show_temp;
 	    item->TEMP_SET.store=store_temp;
 	device_create_file(&(item->dev),&(item->TEMP_SET));
@@ -873,37 +875,37 @@ static int mega8a1_probe(struct device *dev){
 	    item->TEMP_LAST.attr.mode=00444;
 	    item->TEMP_LAST.show=show_temp;
 	    item->TEMP_LAST.store=NULL;
-	device_create_file(&(item->dev),&(item->TEMP_LAST));
+	device_create_file(&(item->dev),&(item->TEMP_LAST));//++++++++++
 	    item->TEMP_DOOR.attr.name="TEMP_DOOR";
 	    item->TEMP_DOOR.attr.mode=00444;
 	    item->TEMP_DOOR.show=show_temp;
 	    item->TEMP_DOOR.store=NULL;
-	device_create_file(&(item->dev),&(item->TEMP_DOOR));
+	device_create_file(&(item->dev),&(item->TEMP_DOOR));//++++++++++
 	    item->ID_IN.attr.name="ID_IN";
 	    item->ID_IN.attr.mode=00644;
 	    item->ID_IN.show=show_temp_id;
 	    item->ID_IN.store=store_temp_id;
-	device_create_file(&(item->dev),&(item->ID_IN));
+	device_create_file(&(item->dev),&(item->ID_IN));//++++++++++
 	    item->ID_OUT.attr.name="ID_OUT";
 	    item->ID_OUT.attr.mode=00644;
 	    item->ID_OUT.show=show_temp_id;
 	    item->ID_OUT.store=store_temp_id;
-	device_create_file(&(item->dev),&(item->ID_OUT));
+	device_create_file(&(item->dev),&(item->ID_OUT));//++++++++++
 	    item->ID_BOX.attr.name="ID_BOX";
 	    item->ID_BOX.attr.mode=00644;
 	    item->ID_BOX.show=show_temp_id;
 	    item->ID_BOX.store=store_temp_id;
-	device_create_file(&(item->dev),&(item->ID_BOX));
+	device_create_file(&(item->dev),&(item->ID_BOX));//++++++++++
 	    item->ID_DOOR.attr.name="ID_DOOR";
 	    item->ID_DOOR.attr.mode=00644;
 	    item->ID_DOOR.show=show_temp_id;
 	    item->ID_DOOR.store=store_temp_id;
-	device_create_file(&(item->dev),&(item->ID_DOOR));
+	device_create_file(&(item->dev),&(item->ID_DOOR));//++++++++++
 	    item->comand.attr.name="comand";
-	    item->comand.attr.mode=00444;
+	    item->comand.attr.mode=00600;
 	    item->comand.show=show_comand;
 	    item->comand.store=store_comand;
-	device_create_file(&(item->dev),&(item->comand));
+	device_create_file(&(item->dev),&(item->comand));//++++++++++
 	    item->_auto.attr.name="_auto";
 	    item->_auto.attr.mode=00444;
 	    item->_auto.show=show_auto;
@@ -942,7 +944,7 @@ static int mega8a1_probe(struct device *dev){
 		item->ID[i].attr.name=kmalloc(5,GFP_KERNEL);
 		snprintf((char *)item->ID[i].attr.name,5,"ID_%x",i);
 		item->ID[i].attr.mode=00444;
-		item->ID[i].show=show_temp;
+		item->ID[i].show=show_temp_id;
 		item->ID[i].store=NULL;
 	    device_create_file(&(item->dev),&(item->ID[i]));
 	    }
