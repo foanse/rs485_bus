@@ -331,7 +331,7 @@ static void __exit bus_exit( void )
 static int __init bus_init( void )
 {
     int ret;
-    trys=10;
+    trys=50;
     serialport_init();
     ret = bus_register(&rs485_bus_type);
     if (ret)

@@ -89,7 +89,8 @@ void sendchar(unsigned char A){
 }
 
 int rs485_talk_rtu(unsigned char bus, unsigned char *buf, unsigned char count, unsigned char *res){
-    unsigned char i,m;
+    unsigned char m;
+    int i;
     uint32_t R;
     unsigned short crc;
     if(down_interruptible(&fos)){
@@ -120,7 +121,7 @@ int rs485_talk_rtu(unsigned char bus, unsigned char *buf, unsigned char count, u
     sendchar((unsigned char)(crc));
     do {R=GET32(uart+AUX_MU_LSR_REG);}while(!(R & (1<<6)));
     PUT32(gpio+GPCLR0,(1<<23));
-    i=100;
+    i=1000;
     m=0;
 //prntk("getting: ");
     while(i>0){
@@ -129,7 +130,7 @@ int rs485_talk_rtu(unsigned char bus, unsigned char *buf, unsigned char count, u
 	    res[m] = GET32(uart+AUX_MU_IO_REG);
 //	printk("0x%02x ",res[m]);
 	    if(m<BUFSIZE) m++;
-	    i=10;
+	    i=100;
 	}
 	else{
 	    SYMB;
